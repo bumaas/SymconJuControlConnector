@@ -17,6 +17,7 @@
             "options": [
                 { "caption": "Please select device type", "value": "" },
                 { "caption": "i-soft SAFE+", "value": "0x33" },
+                { "caption": "i-soft K SAFE+", "value": "0x67" },
                 { "caption": "i-soft plus", "value": "i-soft plus" }
             ]
         },
@@ -42,7 +43,10 @@
             "type": "Button",
             "caption": "Update values",
             "onClick": "$module = new IPSModule($id); $ret = JCD_RefreshData($id); if (!$ret) {echo $module->Translate('Error!');} else {echo $module->Translate('Success!');}"
-        }
+        },
+      {
+        "type": "TestCenter"
+      }
     ],
     "status":
     [
