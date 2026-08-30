@@ -469,8 +469,12 @@ class JuControlDevice extends IPSModule
         }
     }
 
-    private function isResponseOK(string $response): bool
+    // Navigate() und SendCommand() liefern bei einem HTTP-Fehler false, nicht die Antwort
+    private function isResponseOK(string|false $response): bool
     {
+        if ($response === false) {
+            return false;
+        }
         $json = json_decode($response, true, 512, JSON_THROW_ON_ERROR);
         return (isset($json['status']) && ($json['status'] === 'ok'));
     }
@@ -950,7 +954,7 @@ class JuControlDevice extends IPSModule
         $this->updateIfNecessary($currentFlow, self::VAR_IDENT_CURRENTFLOW);
 
         //index 792
-        if ($deviceData[792]['st'] === 'OK') {
+        if (isset($deviceData[792]) && ($deviceData[792]['st'] === 'OK')) {
             /* water stop */
             $leckageschutzStatusflag = $this->getInValue($deviceData, 792, 0);
             if (strlen($leckageschutzStatusflag) === 8) {
@@ -1647,13 +1651,30 @@ class JuControlDevice extends IPSModule
     }
 
 
-    private function updateIfNecessary($newValue, string $ident): void
+    private function updateIfNecessary(int|float|string|bool $newValue, string $ident): void
     {
         $id           = $this->GetIDForIdent($ident);
         $variableType = IPS_GetVariable($id)['VariableType'];
-        if (in_array($variableType, [VARIABLETYPE_FLOAT, VARIABLETYPE_INTEGER]) && !is_numeric($newValue)) {
-            return;
+
+        // numerische Typen sauber casten (auch numerische Strings)
+        if ($variableType === VARIABLETYPE_INTEGER) {
+            if (!is_numeric($newValue)) {
+                $this->SendDebug(__FUNCTION__, "Skip update $ident: non-numeric for INTEGER", 0);
+                return;
+            }
+            $newValue = (int)$newValue;
+        } elseif ($variableType === VARIABLETYPE_FLOAT) {
+            if (!is_numeric($newValue)) {
+                $this->SendDebug(__FUNCTION__, "Skip update $ident: non-numeric for FLOAT", 0);
+                return;
+            }
+            $newValue = (float)$newValue;
+        } elseif ($variableType === VARIABLETYPE_BOOLEAN) {
+            $newValue = (bool)$newValue;
+        } elseif ($variableType === VARIABLETYPE_STRING) {
+            $newValue = (string)$newValue;
         }
+
         if ($this->GetValue($ident) !== $newValue) {
             $this->SetValue($ident, $newValue);
             $this->SendDebug(__FUNCTION__, 'Updating variable ' . $ident . ' to value: ' . $newValue, 0);
