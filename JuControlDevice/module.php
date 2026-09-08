@@ -521,12 +521,20 @@ class JuControlDevice extends IPSModule
                 return;
 
             default:
+                // Kein Gerätetyp gewählt: die Kennung kann trotzdem aus einem früheren RefreshData
+                // im Attribut stehen — der Guard unten entscheidet.
         }
 
         $this->SendDebug(__FUNCTION__, sprintf('Ident: %s, Value: %s', $Ident, $Value), 0);
 
         // Gerätekennung laut Cloud (0x33 SAFE+, 0x67 K SAFE+); vor dem ersten RefreshData die Property
         $dt              = $this->ReadAttributeString(self::ATTR_DEVICE_DT) ?: $this->ReadPropertyString(self::PROP_DEVICETYPE);
+        if ($dt === '') {
+            // Ohne Kennung entstünde ein unbrauchbares Kommando (dt=&index=…); die Variablen einer
+            // früheren Konfiguration bleiben aktionsfähig, auch wenn kein Gerätetyp mehr gewählt ist.
+            $this->LogMessage('No device type configured, command not sent', KL_ERROR);
+            return;
+        }
         $strSerialnumber = '&serialnumber=';
 
         switch ($Ident) {
@@ -704,12 +712,16 @@ class JuControlDevice extends IPSModule
 
             case self::VAR_IDENT_SALTLEVEL:
                 // Die Cloud kennt kein Nachfüllen, nur das Setzen des absoluten Salzgewichts:
-                // Index 94 (wie beim Lesen), Gramm als 2 Byte little-endian — Kommando 56 der JUDO-Kommandoliste
+                // Kommando 0x56 der JUDO-Kommandoliste, Gramm als 2 Byte little-endian.
+                // index ist die Dezimaldarstellung des Kommandobytes (0x3C = 60 Wunschhärte,
+                // 0x41 = 65 Regeneration, 0x48/0x49 = 72/73 Ventil, 0x4A–0x4C = 74–76 Grenzwerte),
+                // nicht die Blocknummer der Leseseite — die zählt getrennt (Salz liegt dort in Block 94).
                 if ($Value < 0 || $Value > self::SALT_CONTAINER_KG) {
                     $this->LogMessage(sprintf('Salt storage not set: %s kg is outside 0-%d kg', $Value, self::SALT_CONTAINER_KG), KL_WARNING);
                     return;
                 }
-                $command         = "write%20data&dt=$dt&index=94&data=" . substr($this->formatEndian((int)$Value * 1000), 0, 4) . "&da=0x1";
+                $Value           = (int)$Value; // Kommando und SetValue müssen denselben Wert tragen
+                $command         = "write%20data&dt=$dt&index=86&data=" . substr($this->formatEndian($Value * 1000), 0, 4) . "&da=0x1";
                 $strSerialnumber = '&serial_number=';
                 break;
 

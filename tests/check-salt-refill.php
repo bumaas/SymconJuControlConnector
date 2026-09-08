@@ -6,8 +6,10 @@ declare(strict_types=1);
  * Salzvorrat setzen (Nachfüllen) über die Variable saltLevel.
  *
  * Die JUDO-API kennt kein „Nachfüllen", sondern nur das Setzen des absoluten Salzgewichts:
- * Kommando 56 der Connectivity-Modul-Liste („Salzvorrat lesen oder schreiben", 2 Byte
- * Gramm, Beispiel 56004448 = 18500 g) bzw. in der Cloud-API derselbe Index 94 wie beim Lesen,
+ * Kommando 0x56 der Connectivity-Modul-Liste („Salzvorrat lesen oder schreiben", 2 Byte
+ * Gramm, Beispiel 56004448 = 18500 g), in der Cloud-API also index=86 — der Index ist die
+ * Dezimaldarstellung des Kommandobytes (wie 0x3C = 60, 0x41 = 65, 0x4A–0x4C = 74–76) und hat
+ * nichts mit der Blocknummer der Leseseite zu tun (dort liegt das Salz in Block 94).
  * Daten als 2 Byte Little-Endian — dasselbe Format wie bei den Leckageschutz-Grenzwerten.
  *
  * Außerdem: Die Gerätekommandos tragen den Gerätetyp der Instanz (dt), nicht fest 0x33 —
@@ -47,7 +49,7 @@ function enthaelt(JuControlHarness $m, string $teil): bool
 $m = neueInstanz('0x33');
 schalte($m, 'saltLevel', 25, 'A. SAFE+: Salzvorrat 25 kg');
 pruefe(count($m->kommandos) === 1, 'genau ein Gerätekommando abgesetzt (' . count($m->kommandos) . ')');
-pruefe(enthaelt($m, 'command=write%20data&dt=0x33&index=94&data=A861&da=0x1'), 'Index 94 mit 25000 g little-endian (A861) und dt=0x33 — ' . letztesKommando($m));
+pruefe(enthaelt($m, 'command=write%20data&dt=0x33&index=86&data=A861&da=0x1'), 'Index 86 mit 25000 g little-endian (A861) und dt=0x33 — ' . letztesKommando($m));
 pruefe(enthaelt($m, '&serial_number='), 'Seriennummer als serial_number');
 pruefe($m->werte()['saltLevel'] === 25, 'Variable saltLevel auf 25 gesetzt');
 pruefe(($m->timer['SleepTimer'] ?? null) === 10000 && ($m->timer['RefreshTimer'] ?? null) === 0, 'Refresh pausiert (SleepTimer 10 s, RefreshTimer aus)');
@@ -55,10 +57,17 @@ pruefe(logsMitStufe($m, KL_ERROR) === [], 'kein Fehler protokolliert');
 
 /* B. Grenzwerte: 50 kg (voller Behälter) geht, 0 kg geht */
 schalte($m, 'saltLevel', 50, 'B. SAFE+: Salzvorrat 50 kg');
-pruefe(enthaelt($m, 'index=94&data=50C3&da=0x1'), '50000 g = 50C3');
+pruefe(enthaelt($m, 'index=86&data=50C3&da=0x1'), '50000 g = 50C3');
 pruefe($m->werte()['saltLevel'] === 50, 'Variable saltLevel auf 50');
+/* B2. Nicht ganzzahliger Wert: Kommando und Variable tragen denselben gerundeten Wert.
+ *     saltLevel ist eine Integer-Variable — ein ungecastetes SetValue(25.9) wäre ein TypeError. */
+schalte($m, 'saltLevel', 25.9, 'B2. SAFE+: Salzvorrat 25,9 kg');
+pruefe(enthaelt($m, 'index=86&data=A861&da=0x1'), '25000 g wie bei 25 kg (A861) — ' . letztesKommando($m));
+pruefe($m->werte()['saltLevel'] === 25, 'Variable saltLevel auf 25 (int, nicht 25.9)');
+pruefe(logsMitStufe($m, KL_ERROR) === [], 'kein Fehler protokolliert');
+
 schalte($m, 'saltLevel', 0, 'B. SAFE+: Salzvorrat 0 kg');
-pruefe(enthaelt($m, 'index=94&data=0000&da=0x1'), '0 g = 0000');
+pruefe(enthaelt($m, 'index=86&data=0000&da=0x1'), '0 g = 0000');
 
 /* C. Außerhalb des Bereichs: kein Kommando, Warnung, Wert bleibt */
 schalte($m, 'saltLevel', 51, 'C. SAFE+: 51 kg (über Behältergröße)');
@@ -80,7 +89,7 @@ $m->kommandoAntwort = '{"status":"ok"}';
 /* E. i-soft K SAFE+ (0x67): dt folgt dem Gerätetyp — beim Salz und bei den bestehenden Kommandos */
 $k = neueInstanz('0x67');
 schalte($k, 'saltLevel', 30, 'E. K SAFE+: Salzvorrat 30 kg');
-pruefe(enthaelt($k, 'command=write%20data&dt=0x67&index=94&data=3075&da=0x1'), 'dt=0x67, 30000 g = 3075 — ' . letztesKommando($k));
+pruefe(enthaelt($k, 'command=write%20data&dt=0x67&index=86&data=3075&da=0x1'), 'dt=0x67, 30000 g = 3075 — ' . letztesKommando($k));
 pruefe($k->werte()['saltLevel'] === 30, 'Variable saltLevel auf 30');
 schalte($k, 'Regeneration', true, 'E. K SAFE+: Regeneration starten');
 pruefe(enthaelt($k, 'dt=0x67&index=65&data=&da=0x1'), 'Regeneration mit dt=0x67 — ' . letztesKommando($k));
@@ -107,7 +116,7 @@ echo "\nG. Property 0x33, Cloud meldet dt=0x67\n";
 pruefe($g->RefreshData() === true, 'RefreshData erfolgreich');
 pruefe($g->werte()['deviceType'] === 'i-soft K SAFE+', 'Gerätetyp aus der Cloud erkannt');
 schalte($g, 'saltLevel', 29, 'G. Salzvorrat 29 kg');
-pruefe(enthaelt($g, 'dt=0x67&index=94&data=4871&da=0x1'), 'Kommando mit der Cloud-Kennung 0x67 — ' . letztesKommando($g));
+pruefe(enthaelt($g, 'dt=0x67&index=86&data=4871&da=0x1'), 'Kommando mit der Cloud-Kennung 0x67 — ' . letztesKommando($g));
 schalte($g, 'Regeneration', true, 'G. Regeneration starten');
 pruefe(enthaelt($g, 'dt=0x67&index=65&data=&da=0x1'), 'Regeneration mit 0x67 — ' . letztesKommando($g));
 
@@ -116,5 +125,22 @@ $g->kommandoAntwort = '';
 schalte($g, 'saltLevel', 10, 'H. Cloud antwortet leer');
 pruefe($g->werte()['saltLevel'] === 29, 'Variable saltLevel unverändert (29)');
 pruefe(logsMitStufe($g, KL_ERROR) !== [], 'Fehler protokolliert');
+
+/* I. Kein Gerätetyp gewählt (Formular auf „Bitte Gerätetyp wählen" zurückgesetzt und gespeichert):
+ *    Die Variablen der früheren Konfiguration bleiben aktionsfähig, es darf aber kein Kommando
+ *    ohne Gerätekennung hinausgehen — dt=&index=… ist unbrauchbar, nicht nur falsch etikettiert. */
+$o = neueInstanz('0x33');
+$o->geraetetypAendern('');
+schalte($o, 'saltLevel', 20, 'I. Ohne Gerätetyp: Salzvorrat 20 kg');
+pruefe($o->kommandos === [], 'kein Gerätekommando abgesetzt (' . count($o->kommandos) . ')');
+pruefe(logsMitStufe($o, KL_ERROR) !== [], 'Fehler protokolliert');
+schalte($o, 'Regeneration', true, 'I. Ohne Gerätetyp: Regeneration starten');
+pruefe($o->kommandos === [], 'kein Gerätekommando abgesetzt (' . count($o->kommandos) . ')');
+
+/* J. Kennung aus einem früheren RefreshData im Attribut: das Kommando geht weiterhin hinaus,
+ *    auch wenn die Property leer ist. */
+$g->geraetetypAendern('');
+schalte($g, 'Regeneration', true, 'J. Property leer, Attribut 0x67');
+pruefe(enthaelt($g, 'dt=0x67&index=65&data=&da=0x1'), 'Kommando mit der Kennung aus dem Attribut — ' . letztesKommando($g));
 
 ergebnis();

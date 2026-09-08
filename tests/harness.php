@@ -19,6 +19,9 @@ require_once __DIR__ . '/stubs/autoload.php';
 // liefert false — normaler Ablauf beim Registrieren), ebenso E_DEPRECATED (module.php meldet
 // unter PHP >= 8.4 beim Laden eine Deprecation).
 set_error_handler(static function (int $nr, string $text, string $datei, int $zeile): bool {
+    if (!(error_reporting() & $nr)) {
+        return false; // mit @ unterdrückt (z. B. @strpos in RefreshData_iSoftPlus) — kein Testfehler
+    }
     if ($nr & (E_USER_ERROR | E_USER_WARNING | E_WARNING | E_NOTICE)) {
         throw new ErrorException($text, 0, $nr, $datei, $zeile);
     }
@@ -60,6 +63,13 @@ final class JuControlHarness extends JuControlDevice
         (new ReflectionMethod(JuControlDevice::class, 'RegisterVariables'))->invoke($this, $deviceType);
         // direkt in den Kernel, nicht über den Recorder — sonst versucht RefreshData() erst ein Login
         SetValue(IPS_GetObjectIDByIdent('deviceState', $this->InstanceID), 'online');
+    }
+
+    /** Gerätetyp nachträglich ändern (auch auf ""), wie ein erneutes Speichern des Formulars. */
+    public function geraetetypAendern(string $deviceType): void
+    {
+        $this->SetProperty('DeviceType', $deviceType);
+        $this->ApplyChanges();
     }
 
     public function refresh(array $device): bool
