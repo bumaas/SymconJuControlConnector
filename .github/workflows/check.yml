@@ -18,7 +18,9 @@ jobs:
       - name: PHP syntax
         run: |
           php -l JuControlDevice/module.php
+          php -l tests/harness.php
           php -l tests/check-incomplete-devicedata.php
+          php -l tests/check-salt-refill.php
 
       - name: JSON validity
         run: |
@@ -27,3 +29,6 @@ jobs:
 
       - name: Incomplete device data regression test
         run: php tests/check-incomplete-devicedata.php
+
+      - name: Salt refill and device type in commands
+        run: php tests/check-salt-refill.php

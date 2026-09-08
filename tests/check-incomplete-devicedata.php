@@ -29,133 +29,13 @@ declare(strict_types=1);
  * Störung — die übrigen Werte werden weiter verarbeitet. Die Störung wird beim ersten
  * Auftreten als Warnung und bei Erholung als Hinweis protokolliert, nicht in jedem Lauf.
  *
- * Kernel-Ersatz ist der offizielle Stub symcon/SymconStubs (Submodul tests/stubs, gepinnt);
- * er trägt Properties, Attribute, Variablen, Profile und Debug. Der Harness zeichnet nur auf,
- * was der Stub nicht beobachtbar macht (SetValue, SetStatus, SetTimerInterval, LogMessage),
- * und ersetzt den Cloud-Zugriff.
+ * Testrahmen: tests/harness.php (offizieller Kernel-Stub symcon/SymconStubs als Submodul).
  *
  * Aufruf: git submodule update --init (einmalig), dann
  *         php tests/check-incomplete-devicedata.php (Exit-Code 1 bei Fehlern)
  */
 
-require_once __DIR__ . '/stubs/autoload.php';
-require_once dirname(__DIR__) . '/JuControlDevice/module.php';
-
-/** Bindet JuControlDevice an den Kernel-Stub, macht die privaten Methoden aufrufbar und ersetzt den Cloud-Zugriff. */
-final class JuControlHarness extends JuControlDevice
-{
-    public const MODULE_ID = '{017837A8-4FBD-DA9C-8A3A-EEE53D12DA69}'; // JuControlDevice/module.json
-
-    /** Antwort, die SendCommand() für jede Cloud-Anfrage liefert */
-    public string $cloudAntwort = '';
-    /** @var list<array{0: string, 1: mixed}> jedes SetValue */
-    public array $writes = [];
-    /** @var list<array{0: int, 1: string}> jedes LogMessage als [Stufe, Text] */
-    public array $logs = [];
-    /** @var list<int> jedes SetStatus (auch die aus Create/ApplyChanges) */
-    public array $status = [];
-    /** @var array<string, int> letztes SetTimerInterval je Timer */
-    public array $timer = [];
-
-    public function id(): int
-    {
-        return $this->InstanceID;
-    }
-
-    /** Gerätetyp i-soft SAFE+ setzen, Variablen registrieren, Gerät „online" — wie eine eingerichtete Instanz. */
-    public function anlegen(): void
-    {
-        self::systemProfile();
-        $this->SetProperty('DeviceType', '0x33');
-        $this->ApplyChanges(); // Pending → Current; ohne Zugangsdaten nur SetStatus(205), kein Login
-        (new ReflectionMethod(JuControlDevice::class, 'RegisterVariables'))->invoke($this, '0x33');
-        // direkt in den Kernel, nicht über den Recorder — sonst versucht RefreshData() erst ein Login
-        SetValue(IPS_GetObjectIDByIdent('deviceState', $this->InstanceID), 'online');
-    }
-
-    public function refresh(array $device): bool
-    {
-        return (new ReflectionMethod(JuControlDevice::class, 'RefreshData_iSoftSafe'))->invoke($this, $device);
-    }
-
-    public function attr(string $name): string
-    {
-        return $this->ReadAttributeString($name);
-    }
-
-    /** Alle Variablenwerte der Instanz (Ident → Wert) aus dem Kernel, typgetreu */
-    public function werte(): array
-    {
-        $werte = [];
-        foreach (IPS_GetChildrenIDs($this->InstanceID) as $vid) {
-            $werte[IPS_GetObject($vid)['ObjectIdent']] = GetValue($vid);
-        }
-        return $werte;
-    }
-
-    public function SendCommand(string $url, array $data): string
-    {
-        return $this->cloudAntwort;
-    }
-
-    /* --- Stub-Overrides: Signaturen exakt wie tests/stubs/ModuleStubs.php (untypisierte Parameter bleiben untypisiert) --- */
-
-    protected function getTime(): int
-    {
-        return time(); // RegisterTimer/SetTimerInterval brauchen eine Uhr
-    }
-
-    protected function SetValue(string $Ident, $Value): bool
-    {
-        $ok = parent::SetValue($Ident, $Value); // typstreng: TypeError statt Cast
-        $this->writes[] = [$Ident, $Value];
-        return $ok;
-    }
-
-    protected function SetStatus($Status): void
-    {
-        $this->status[] = $Status;
-        parent::SetStatus($Status);
-    }
-
-    protected function SetTimerInterval(string $Ident, int $Milliseconds, ?int $start = null): void
-    {
-        $this->timer[$Ident] = $Milliseconds;
-        parent::SetTimerInterval($Ident, $Milliseconds, $start);
-    }
-
-    protected function LogMessage($Message, $Type): void
-    {
-        $this->logs[] = [$Type, $Message]; // im Stub ein leerer Rumpf
-    }
-
-    /** Systemprofile, die der Stub nicht mitbringt (sein ProfileManager startet leer) */
-    private static function systemProfile(): void
-    {
-        foreach (['~Switch' => VARIABLETYPE_BOOLEAN, '~Intensity.100' => VARIABLETYPE_INTEGER, '~UnixTimestampDate' => VARIABLETYPE_INTEGER] as $name => $typ) {
-            if (!IPS_VariableProfileExists($name)) {
-                IPS_CreateVariableProfile($name, $typ);
-            }
-        }
-    }
-}
-
-/** Legt eine eingerichtete Instanz im Kernel-Stub an (Create + ApplyChanges laufen in createInstance). */
-function neueInstanz(): JuControlHarness
-{
-    $id = IPS\ObjectManager::registerObject(1 /* Instance */);
-    IPS\InstanceManager::createInstance($id, [
-        'ModuleID'   => JuControlHarness::MODULE_ID,
-        'ModuleName' => 'JuControlDevice',
-        'ModuleType' => 3,
-        'Class'      => JuControlHarness::class,
-    ]);
-    $m = IPS\InstanceManager::getInstanceInterface($id);
-    $m->anlegen();
-    return $m;
-}
-
-IPS\Kernel::reset(); // einmal; weitere Instanzen (Fälle M, N) entstehen im selben Kernel
+require_once __DIR__ . '/harness.php';
 
 $fixture = json_decode(file_get_contents(__DIR__ . '/fixtures/devicedata_isoft_safe_plus.json'), true, 512, JSON_THROW_ON_ERROR);
 
@@ -194,18 +74,6 @@ function alleFelderLeer(array $deviceData): array
     return $deviceData;
 }
 
-$pruefungen = 0;
-$fehler     = [];
-function pruefe(bool $ok, string $text): void
-{
-    global $pruefungen, $fehler;
-    $pruefungen++;
-    if (!$ok) {
-        $fehler[] = $text;
-    }
-    echo($ok ? '  ok   ' : '  FEHL ') . $text . "\n";
-}
-
 /** Führt RefreshData_iSoftSafe auf der übergebenen Instanz aus; Logs werden je Lauf gesammelt. */
 function lauf(JuControlHarness $m, array $device, string $titel): void
 {
@@ -232,11 +100,6 @@ function abweichungen(array $ist, array $soll, array $ausser = []): array
     return $diff;
 }
 
-function logsMitStufe(JuControlHarness $m, int $stufe): array
-{
-    return array_values(array_map(static fn($l) => $l[1], array_filter($m->logs, static fn($l) => $l[0] === $stufe)));
-}
-
 function pruefeUnveraendert(JuControlHarness $m, array $soll, string $attrSoll, array $ausser = []): void
 {
     $diff = abweichungen($m->werte(), $soll, $ausser);
@@ -244,15 +107,7 @@ function pruefeUnveraendert(JuControlHarness $m, array $soll, string $attrSoll, 
     pruefe($m->attr('DeviceData') === $attrSoll, 'Attribut DeviceData unverändert');
 }
 
-function pruefeProtokoll(JuControlHarness $m, int $warnungen, int $hinweise): void
-{
-    $w = logsMitStufe($m, KL_WARNING);
-    $h = logsMitStufe($m, KL_NOTIFY);
-    pruefe(count($w) === $warnungen, sprintf('%d Warnung(en) protokolliert (%d: %s)', $warnungen, count($w), implode(' | ', $w)));
-    pruefe(count($h) === $hinweise, sprintf('%d Hinweis(e) protokolliert (%d: %s)', $hinweise, count($h), implode(' | ', $h)));
-}
-
-$m = neueInstanz();
+$m = neueInstanz('0x33');
 
 /* A. Vollständiger Datensatz: wird normal verarbeitet und liefert den Sollstand */
 lauf($m, geraet($fixture), 'A. Vollständiger Datensatz');
@@ -408,5 +263,4 @@ pruefe($rd->werte()['deviceType'] === 'i-soft SAFE+' && $rd->werte()['deviceID']
 pruefe(abweichungen($rd->werte(), $soll, ['Hardness_Washing', 'Hardness_Shower', 'Hardness_Heater', 'Hardness_Watering', 'Hardness_Normal', 'Time_Shower', 'Time_Washing', 'Time_Heater', 'Time_Watering', 'deviceType']) === [], 'Variablen wie beim direkten Lauf');
 pruefeProtokoll($rd, 0, 1);
 
-echo "\n$pruefungen Prüfungen, " . count($fehler) . " Fehler\n";
-exit($fehler === [] ? 0 : 1);
+ergebnis();

@@ -75,6 +75,9 @@ class JuControlDevice extends IPSModule
     private const DT_I_SOFT_K_SAFE_PLUS = '0x67'; //kompakte SAFE+
     private const DT_I_SOFT_PLUS        = 'i-soft plus';
 
+    /** Fassungsvermögen des Salzbehälters in kg (100 % Füllstand; Grenze für das Setzen des Salzvorrats) */
+    private const SALT_CONTAINER_KG = 50;
+
     /**
      * Erwartete Länge des Datenfelds je ausgewertetem Block der i-soft SAFE+ (Block 93: ohne
      * bzw. mit Laufzeitangabe). Nur diese Blöcke wertet das Modul aus.
@@ -127,7 +130,7 @@ class JuControlDevice extends IPSModule
         $this->RegisterProfileInteger("JCD.dH_int", "Drops", "", " °dH", 0, 50, 1);
         $this->RegisterProfileFloat("JCD.dH_float", "Drops", "", " °dH", 0, 50, 0.1);
         $this->RegisterProfileInteger("JCD.Days", "Clock", "", $this->Translate(' days'), 0, 0, 0);
-        $this->RegisterProfileInteger('JCD.kg', '', '', ' kg', 0, 0, 0);
+        $this->RegisterProfileInteger('JCD.kg', '', '', ' kg', 0, self::SALT_CONTAINER_KG, 1);
         $this->RegisterProfileInteger("JCD.Liter", "Wave", "", $this->Translate(' liters'), 0, 99999999, 1);
         $this->RegisterProfileInteger("JCD.Hours", "Clock", "", $this->Translate(' hours'), 0, 10, 1); // Wasserszenen-Zeiten aller Gerätetypen
         $this->RegisterProfileInteger('JCD.Minutes.WSMaxPeriodOfUse', 'Clock', '', $this->Translate(' minutes'), 0, 600, 10);
@@ -286,6 +289,7 @@ class JuControlDevice extends IPSModule
             $this->RegisterVariableBoolean("hasEmergencySupply", $this->Translate('Safety-Modul'), "JCD.NoYes", ++$position);
 
             $this->EnableAction(self::VAR_IDENT_REGENERATION);
+            $this->EnableAction(self::VAR_IDENT_SALTLEVEL); // Salzvorrat nach dem Nachfüllen setzen
 
             $this->RegisterVariableInteger("totalService", $this->Translate('Number of services'), "", ++$position);
 
@@ -515,6 +519,7 @@ class JuControlDevice extends IPSModule
 
         $this->SendDebug(__FUNCTION__, sprintf('Ident: %s, Value: %s', $Ident, $Value), 0);
 
+        $dt              = $this->ReadPropertyString(self::PROP_DEVICETYPE); // Gerätekennung der Instanz (0x33 SAFE+, 0x67 K SAFE+)
         $strSerialnumber = '&serialnumber=';
 
         switch ($Ident) {
@@ -555,19 +560,19 @@ class JuControlDevice extends IPSModule
                 $strSerialnumber = '&serial_number=';
                 break;
             case self::VAR_IDENT_HARDNESS_NORMAL:
-                $command         = "write%20data&dt=0x33&index=60&data=" . $Value . "&da=0x1&action=normal";
+                $command         = "write%20data&dt=$dt&index=60&data=" . $Value . "&da=0x1&action=normal";
                 $strSerialnumber = '&serial_number=';
                 break;
             case self::VAR_IDENT_WATERSTOP_MAXPERIODOFUSE:
-                $command         = "write%20data&dt=0x33&index=74&data=" . substr($this->formatEndian($Value), 0, 4) . "&da=0x1";
+                $command         = "write%20data&dt=$dt&index=74&data=" . substr($this->formatEndian($Value), 0, 4) . "&da=0x1";
                 $strSerialnumber = '&serial_number=';
                 break;
             case self::VAR_IDENT_WATERSTOP_MAXQUANTITY:
-                $command         = "write%20data&dt=0x33&index=76&data=" . substr($this->formatEndian($Value), 0, 4) . "&da=0x1";
+                $command         = "write%20data&dt=$dt&index=76&data=" . substr($this->formatEndian($Value), 0, 4) . "&da=0x1";
                 $strSerialnumber = '&serial_number=';
                 break;
             case self::VAR_IDENT_WATERSTOP_MAXWATERFLOW:
-                $command         = "write%20data&dt=0x33&index=75&data=" . substr($this->formatEndian($Value), 0, 4) . "&da=0x1";
+                $command         = "write%20data&dt=$dt&index=75&data=" . substr($this->formatEndian($Value), 0, 4) . "&da=0x1";
                 $strSerialnumber = '&serial_number=';
                 break;
             case self::VAR_IDENT_WATERSTOP_HOLIDAYMODE:
@@ -600,20 +605,20 @@ class JuControlDevice extends IPSModule
                         $wsUrlaub[4] = '0';
                 }
 
-                $command         = "write%20data&dt=0x33&index=77&data=" . str_pad(dechex(bindec($wsUrlaub)), 2, '0', STR_PAD_LEFT) . "&da=0x1";
+                $command         = "write%20data&dt=$dt&index=77&data=" . str_pad(dechex(bindec($wsUrlaub)), 2, '0', STR_PAD_LEFT) . "&da=0x1";
                 $strSerialnumber = '&serial_number=';
                 break;
 
             case self::VAR_IDENT_WATERSTOP_SLEEPMODEDURATION:
-                $command         = "write%20data&dt=0x33&index=171&data=" . $Value . "&da=0x1";
+                $command         = "write%20data&dt=$dt&index=171&data=" . $Value . "&da=0x1";
                 $strSerialnumber = '&serial_number=';
                 break;
 
             case self::VAR_IDENT_WATERSTOP:
                 if ($Value) {
-                    $command = "write%20data&dt=0x33&index=72&data=&da=0x1";
+                    $command = "write%20data&dt=$dt&index=72&data=&da=0x1";
                 } else {
-                    $command = "write%20data&dt=0x33&index=73&data=&da=0x1";
+                    $command = "write%20data&dt=$dt&index=73&data=&da=0x1";
                 }
                 $strSerialnumber = '&serial_number=';
                 break;
@@ -621,25 +626,25 @@ class JuControlDevice extends IPSModule
             case self::VAR_IDENT_REGENERATION:
                 //die Regeneration lässt sich nur einschalten, nicht ausschalten
                 if ($Value) {
-                    $command = "write%20data&dt=0x33&index=65&data=&da=0x1";
+                    $command = "write%20data&dt=$dt&index=65&data=&da=0x1";
                 }
                 $strSerialnumber = '&serial_number=';
                 break;
 
             case self::VAR_IDENT_SLEEPMODE:
                 if ($Value) {
-                    $command = "write%20data&dt=0x33&index=171&data=&da=0x1";
+                    $command = "write%20data&dt=$dt&index=171&data=&da=0x1";
                 } else {
-                    $command = "write%20data&dt=0x33&index=73&data=&da=0x1";
+                    $command = "write%20data&dt=$dt&index=73&data=&da=0x1";
                 }
                 $strSerialnumber = '&serial_number=';
                 break;
 
             case self::VAR_IDENT_HOLIDAY:
                 if ($Value) {
-                    $command = "write%20data&dt=0x33&index=77&data=&da=0x1";
+                    $command = "write%20data&dt=$dt&index=77&data=&da=0x1";
                 } else {
-                    $command = "write%20data&dt=0x33&index=73&data=&da=0x1";
+                    $command = "write%20data&dt=$dt&index=73&data=&da=0x1";
                 }
                 $strSerialnumber = '&serial_number=';
                 break;
@@ -649,14 +654,14 @@ class JuControlDevice extends IPSModule
                     case 0:
                         $action   = "normal";
                         $hardness = $this->GetValue(self::VAR_IDENT_HARDNESS_NORMAL);
-                        $command  = "write%20data&dt=0x33&index=201&data=" . $hardness . "&da=0x1&disable_time=" . "&action=" . $action;
+                        $command  = "write%20data&dt=$dt&index=201&data=" . $hardness . "&da=0x1&disable_time=" . "&action=" . $action;
                         break;
                     case 1:
                         $action   = "shower";
                         $time     = $this->GetValue(self::VAR_IDENT_TIME_SHOWER);
                         $hardness = $this->GetValue(self::VAR_IDENT_HARDNESS_SHOWER);
                         $command  =
-                            "write%20data&dt=0x33&index=202&data=" . $hardness . "&da=0x1&disable_time=" . (time() + $time * 60 * 60) . "&action="
+                            "write%20data&dt=$dt&index=202&data=" . $hardness . "&da=0x1&disable_time=" . (time() + $time * 60 * 60) . "&action="
                             . $action;
                         break;
                     case 2:
@@ -664,7 +669,7 @@ class JuControlDevice extends IPSModule
                         $time     = $this->GetValue(self::VAR_IDENT_TIME_HEATER);
                         $hardness = $this->GetValue(self::VAR_IDENT_HARDNESS_HEATER);
                         $command  =
-                            "write%20data&dt=0x33&index=204&data=" . $hardness . "&da=0x1&disable_time=" . (time() + $time * 60 * 60) . "&action="
+                            "write%20data&dt=$dt&index=204&data=" . $hardness . "&da=0x1&disable_time=" . (time() + $time * 60 * 60) . "&action="
                             . $action;
                         break;
                     case 3:
@@ -672,7 +677,7 @@ class JuControlDevice extends IPSModule
                         $time     = $this->GetValue(self::VAR_IDENT_TIME_WATERING);
                         $hardness = $this->GetValue(self::VAR_IDENT_HARDNESS_WATERING);
                         $command  =
-                            "write%20data&dt=0x33&index=203&data=" . $hardness . "&da=0x1&disable_time=" . (time() + $time * 60 * 60) . "&action="
+                            "write%20data&dt=$dt&index=203&data=" . $hardness . "&da=0x1&disable_time=" . (time() + $time * 60 * 60) . "&action="
                             . $action;
                         break;
                     case 4:
@@ -680,7 +685,7 @@ class JuControlDevice extends IPSModule
                         $time     = $this->GetValue(self::VAR_IDENT_TIME_WASHING);
                         $hardness = $this->GetValue(self::VAR_IDENT_HARDNESS_WASHING);
                         $command  =
-                            "write%20data&dt=0x33&index=205&data=" . $hardness . "&da=0x1&disable_time=" . (time() + $time * 60 * 60) . "&action="
+                            "write%20data&dt=$dt&index=205&data=" . $hardness . "&da=0x1&disable_time=" . (time() + $time * 60 * 60) . "&action="
                             . $action;
                         break;
                     default:
@@ -688,6 +693,17 @@ class JuControlDevice extends IPSModule
                 }
                 $strSerialnumber = '&serial_number=';
                 $parameter       = 0;
+                break;
+
+            case self::VAR_IDENT_SALTLEVEL:
+                // Die Cloud kennt kein Nachfüllen, nur das Setzen des absoluten Salzgewichts:
+                // Index 94 (wie beim Lesen), Gramm als 2 Byte little-endian — Kommando 56 der JUDO-Kommandoliste
+                if ($Value < 0 || $Value > self::SALT_CONTAINER_KG) {
+                    $this->LogMessage(sprintf('Salt storage not set: %s kg is outside 0-%d kg', $Value, self::SALT_CONTAINER_KG), KL_WARNING);
+                    return;
+                }
+                $command         = "write%20data&dt=$dt&index=94&data=" . substr($this->formatEndian((int)$Value * 1000), 0, 4) . "&da=0x1";
+                $strSerialnumber = '&serial_number=';
                 break;
 
             default:
@@ -703,8 +719,7 @@ class JuControlDevice extends IPSModule
             }
 
             $this->SendDebug(__FUNCTION__, 'Requesting API URL ' . $deviceCommandUrl, 0);
-            $wc       = new WebClient();
-            $response = $wc->Navigate($deviceCommandUrl);
+            $response = $this->sendDeviceCommand($deviceCommandUrl);
 
             $this->SendDebug(__FUNCTION__, 'Received response from API: ' . $response, 0);
 
@@ -719,6 +734,13 @@ class JuControlDevice extends IPSModule
         }
 
         $this->Sleep(10000);
+    }
+
+    /** Netz-Naht der Gerätekommandos aus RequestAction (Tests überschreiben sie) */
+    protected function sendDeviceCommand(string $url): string|false
+    {
+        $wc = new WebClient();
+        return $wc->Navigate($url);
     }
 
     public function SendCommand(string $url, array $data)

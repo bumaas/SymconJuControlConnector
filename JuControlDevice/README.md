@@ -55,6 +55,7 @@ Die Statusvariablen/Kategorien werden automatisch angelegt. Das Löschen einzeln
 | Ziel-Wasserhärte	              |       | Integer	  | Aktuell eingestellte Zielwasserhärte |
 | Ist-Wasserhärte	               |       | Float		   | Wasserhärte eingangseitig (vom Versorger) |
 | Füllstand Salz	                |       | Integer	  | Aktueller Füllstand des Salzbehälters |
+| Salzvorrat                     | saltLevel | Integer | Salzvorrat in kg. Schaltbar (nur i-soft SAFE+/K SAFE+): nach dem Nachfüllen den neuen Gesamtbestand eintragen (0–50 kg, angezeigter Bestand plus nachgefüllte Menge) — die Anlage kennt kein „Nachfüllen", nur das Setzen des Bestands |
 | Aktueller Durchfluss           |       | Integer	  | Aktueller Wasserdurchfluss |
 | Batteriezustand Notstrommodul  |       | Integer	  | Zustand der Notstromversorgung |
 | Aktive Wasserszene	            |       | Integer	  | Aktiver Wasserszene |
@@ -112,6 +113,11 @@ Beispiel:
 `JCD_RefreshData(12345);`
 
 ### 8. Version-History
+08.09.2026
+V1.4
+- Salzvorrat setzbar (nach dem Nachfüllen den neuen Bestand eintragen)
+- Gerätekommandos tragen die Gerätekennung der Instanz (i-soft K SAFE+ sendet 0x67 statt 0x33)
+
 20.01.2023
 V1.3
 - Unterstützung mehrerer angemeldeter Geräte
