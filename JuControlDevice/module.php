@@ -835,6 +835,13 @@ class JuControlDevice extends IPSModule
 
     private function RefreshData_iSoftSafe(array $device): void
     {
+        $deviceData = $device['data'][0]['data'] ?? [];
+        if (!$this->isSafeDeviceDataComplete($deviceData)) {
+            // Werte und Attribut bleiben auf dem letzten vollständigen Stand
+            $this->SendDebug(__FUNCTION__, sprintf('device data incomplete (lu: %s) -> skipping refresh', $deviceData['lu'] ?? '?'), 0);
+            return;
+        }
+
         /* Device S/N */
         $this->updateIfNecessary($device['serialnumber'], "deviceSN");
 
@@ -845,7 +852,6 @@ class JuControlDevice extends IPSModule
         $this->updateIfNecessary($device['data'][0]['sv'], "ccuVersion");
 
 
-        $deviceData = $device['data'][0]['data'];
         $this->WriteAttributeString(self::ATTR_DEVICEDATA, json_encode($deviceData));
 
         /* Emergency supply available */
@@ -1408,6 +1414,45 @@ class JuControlDevice extends IPSModule
         return $this->Login();
     }
 
+
+    /**
+     * Prüft, ob ein i-soft-SAFE+-Datensatz auswertbar ist.
+     *
+     * Die JUDO-Cloud meldet das Gerät zeitweise als „online“ und die Blöcke mit st=OK, liefert
+     * aber leere oder gekürzte Datenfelder (beobachtet 06./08.09.2026, jeweils ab 03:00 Uhr für
+     * rund 40 Minuten). getInValue() gäbe dafür Leerstrings zurück: Geräte-ID, Versionen und
+     * Notstrommodul würden mit Leerwerten überschrieben, und decbin('') im Block 792 bräche den
+     * Lauf mit einem TypeError ab. Ein solcher Datensatz wird deshalb komplett übersprungen.
+     *
+     * Die Blöcke 790 und 791 müssen vorhanden sein; der Leckageschutz-Block 792 ist optional,
+     * muss aber vollständig sein, wenn er mit st=OK gemeldet wird.
+     */
+    private function isSafeDeviceDataComplete(array $deviceData): bool
+    {
+        foreach ([790, 791, 792] as $index) {
+            $block = $deviceData[$index] ?? null;
+            if ($block === null) {
+                if ($index === 792) {
+                    continue;
+                }
+                $this->SendDebug(__FUNCTION__, "block $index missing", 0);
+                return false;
+            }
+            if (($block['st'] ?? '') !== 'OK') {
+                if ($index === 792) {
+                    continue; // wird in RefreshData_iSoftSafe ohnehin übersprungen
+                }
+                $this->SendDebug(__FUNCTION__, sprintf('block %s: st=%s', $index, $block['st'] ?? '?'), 0);
+                return false;
+            }
+            $length = strlen($block['data'] ?? '');
+            if ($length !== 66) {
+                $this->SendDebug(__FUNCTION__, sprintf('block %s: data length %d instead of 66', $index, $length), 0);
+                return false;
+            }
+        }
+        return true;
+    }
 
     private function getInValue(array $deviceData, int $index = null, int $subIndex = null)
     {
