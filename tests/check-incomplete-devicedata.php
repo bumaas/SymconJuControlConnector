@@ -3,248 +3,89 @@
 declare(strict_types=1);
 
 /*
- * Regressionstest: Ein unvollständiger Gerätedatensatz darf weder abstürzen noch
- * Variablen überschreiben.
+ * Regressionstest: Unvollständige Gerätedaten der JUDO-Cloud dürfen weder abstürzen noch
+ * Variablen überschreiben — und sie dürfen nur die betroffenen Werte zurückhalten.
  *
  * Beobachtet auf dem nuc (06.09. und 08.09.2026, jeweils ab 03:00 Uhr, rund 40 Minuten
  * im Minutentakt): Die JUDO-Cloud meldet das Gerät als „online" und die Datenblöcke mit
- * `st: OK`, liefert aber leere bzw. zu kurze Datenfelder. getInValue() gibt dafür einen
+ * `st: OK`, liefert aber leere bzw. zu kurze Datenfelder. getInValue() gab dafür einen
  * Leerstring zurück, der in RefreshData_iSoftSafe() ungeprüft an decbin() ging:
  *
  *   Fatal error: Uncaught TypeError: decbin(): Argument #1 ($num) must be of type int,
  *   string given in .../JuControlDevice/module.php:974
  *
  * Vor dem Absturz hatte das Modul Geräte-ID, Versionen und Notstrommodul bereits mit
- * Leerwerten überschrieben (alle vier Variablen wurden im ersten fehlerfreien Lauf
- * danach, 03:39:04, wieder auf ihre echten Werte geändert).
+ * Leerwerten überschrieben.
  *
  * Fixture: tests/fixtures/devicedata_isoft_safe_plus.json ist der echte Datensatz einer
  * i-soft SAFE+ (Attribut DeviceData der Instanz, Stand 08.09.2026). Der unvollständige
  * Datensatz aus dem Störfenster konnte nicht mitgeschnitten werden; die Fehlerfälle
- * werden deshalb aus der echten Fixture abgeleitet (Datenfelder geleert bzw. gekürzt).
+ * werden deshalb aus der echten Fixture abgeleitet (Datenfelder geleert, gekürzt, ohne
+ * Blockpräfix, Block fehlt ganz, Datenliste leer).
+ *
+ * Alle Fälle laufen nacheinander auf DERSELBEN Instanz: Erst füllt ein vollständiger
+ * Datensatz die Variablen, danach müssen die gestörten Varianten Werte und Attribut auf
+ * genau diesem Stand lassen. Ein Block, den das Gerät gar nicht liefert, ist keine
+ * Störung — die übrigen Werte werden weiter verarbeitet. Die Störung wird beim ersten
+ * Auftreten als Warnung und bei Erholung als Hinweis protokolliert, nicht in jedem Lauf.
  *
  * Aufruf: php tests/check-incomplete-devicedata.php (Exit-Code 1 bei Fehlern)
  */
 
-foreach ([
-    'VARIABLETYPE_BOOLEAN' => 0,
-    'VARIABLETYPE_INTEGER' => 1,
-    'VARIABLETYPE_FLOAT'   => 2,
-    'VARIABLETYPE_STRING'  => 3,
-    'IS_ACTIVE'            => 102,
-    'IS_INACTIVE'          => 104,
-    'KR_READY'             => 10103,
-    'KL_MESSAGE'           => 10201,
-    'KL_SUCCESS'           => 10202,
-    'KL_NOTIFY'            => 10203,
-    'KL_WARNING'           => 10204,
-    'KL_ERROR'             => 10205,
-] as $name => $wert) {
-    if (!defined($name)) {
-        define($name, $wert);
-    }
-}
-
-/** Minimaler Symcon-Ersatz: merkt sich Variablentypen, Werte und jedes SetValue. */
-abstract class IPSModule
-{
-    /** @var list<array{0: string, 1: mixed}> */
-    public array $writes = [];
-    /** @var list<string> */
-    public array $logs = [];
-    /** @var list<string> */
-    public array $debug = [];
-    /** Attribut DeviceData vor dem Lauf, zur Kontrolle */
-    public string $attrVorher = '';
-
-    /** @var array<string, int> Ident → Variablentyp */
-    public array $variableTypes = [];
-    /** @var array<int, string> Variablen-ID → Ident */
-    public array $idents = [];
-
-    protected array $properties = [];
-    protected array $attributes = [];
-    protected array $values     = [];
-
-    public int $InstanceID = 12345;
-
-    public function Create(): void {}
-
-    public function ApplyChanges(): void {}
-
-    public function RegisterPropertyInteger(string $ident, int $vorgabe): void
-    {
-        $this->properties[$ident] ??= $vorgabe;
-    }
-
-    public function RegisterPropertyString(string $ident, string $vorgabe): void
-    {
-        $this->properties[$ident] ??= $vorgabe;
-    }
-
-    public function RegisterAttributeString(string $ident, string $vorgabe): void
-    {
-        $this->attributes[$ident] ??= $vorgabe;
-    }
-
-    public function RegisterTimer(string $ident, int $intervall, string $skript): void {}
-
-    public function SetTimerInterval(string $ident, int $intervall): void {}
-
-    public function ReadPropertyInteger(string $ident): int
-    {
-        return (int)($this->properties[$ident] ?? 0);
-    }
-
-    public function ReadPropertyString(string $ident): string
-    {
-        return (string)($this->properties[$ident] ?? '');
-    }
-
-    public function ReadAttributeString(string $ident): string
-    {
-        return (string)($this->attributes[$ident] ?? '');
-    }
-
-    public function WriteAttributeString(string $ident, string $wert): void
-    {
-        $this->attributes[$ident] = $wert;
-    }
-
-    private function registerVariable(string $ident, int $typ): void
-    {
-        $this->variableTypes[$ident] = $typ;
-        $id                          = 10000 + count($this->idents);
-        $this->idents[$id]           = $ident;
-        $this->values[$ident] ??= match ($typ) {
-            VARIABLETYPE_BOOLEAN => false,
-            VARIABLETYPE_INTEGER => 0,
-            VARIABLETYPE_FLOAT => 0.0,
-            default => '',
-        };
-    }
-
-    public function RegisterVariableBoolean(string $ident, string $name, string $profil = '', int $position = 0): void
-    {
-        $this->registerVariable($ident, VARIABLETYPE_BOOLEAN);
-    }
-
-    public function RegisterVariableInteger(string $ident, string $name, string $profil = '', int $position = 0): void
-    {
-        $this->registerVariable($ident, VARIABLETYPE_INTEGER);
-    }
-
-    public function RegisterVariableFloat(string $ident, string $name, string $profil = '', int $position = 0): void
-    {
-        $this->registerVariable($ident, VARIABLETYPE_FLOAT);
-    }
-
-    public function RegisterVariableString(string $ident, string $name, string $profil = '', int $position = 0): void
-    {
-        $this->registerVariable($ident, VARIABLETYPE_STRING);
-    }
-
-    public function EnableAction(string $ident): void {}
-
-    public function GetIDForIdent(string $ident): int
-    {
-        $id = array_search($ident, $this->idents, true);
-        if ($id === false) {
-            throw new RuntimeException("Unbekannter Ident: $ident");
-        }
-        return $id;
-    }
-
-    public function SetValue(string $ident, mixed $wert): void
-    {
-        $this->writes[]       = [$ident, $wert];
-        $this->values[$ident] = $wert;
-    }
-
-    public function GetValue(string $ident): mixed
-    {
-        return $this->values[$ident];
-    }
-
-    public function SendDebug(string $kanal, string $text, int $format): void
-    {
-        $this->debug[] = "$kanal: $text";
-    }
-
-    public function LogMessage(string $text, int $stufe): void
-    {
-        $this->logs[] = $text;
-    }
-
-    public function Translate(string $text): string
-    {
-        return $text;
-    }
-
-    public function SetStatus(int $status): void {}
-}
-
-/** @var IPSModule|null Instanz, deren Variablentypen IPS_GetVariable() beantwortet */
-$GLOBALS['jcdTestModul'] = null;
-
-if (!function_exists('IPS_GetVariable')) {
-    function IPS_GetVariable(int $id): array
-    {
-        $m = $GLOBALS['jcdTestModul'];
-        return ['VariableType' => $m->variableTypes[$m->idents[$id]]];
-    }
-}
-if (!function_exists('IPS_GetKernelRunlevel')) {
-    function IPS_GetKernelRunlevel(): int
-    {
-        return KR_READY;
-    }
-}
-foreach ([
-    'IPS_VariableProfileExists'         => false,
-    'IPS_CreateVariableProfile'         => null,
-    'IPS_SetVariableProfileText'        => null,
-    'IPS_SetVariableProfileIcon'        => null,
-    'IPS_SetVariableProfileValues'      => null,
-    'IPS_SetVariableProfileAssociation' => null,
-    'IPS_GetVariableProfile'            => ['ProfileType' => 1],
-] as $fn => $rueckgabe) {
-    if (!function_exists($fn)) {
-        eval("function $fn(...\$args) { return " . var_export($rueckgabe, true) . '; }');
-    }
-}
-
+require_once __DIR__ . '/symcon_stubs.php';
 require_once dirname(__DIR__) . '/JuControlDevice/module.php';
 
-/** Macht die privaten Methoden des Moduls für den Test aufrufbar. */
+/** Macht die privaten Methoden des Moduls für den Test aufrufbar und ersetzt den Cloud-Zugriff. */
 final class JuControlHarness extends JuControlDevice
 {
+    /** Antwort, die SendCommand() für „get device data" liefert */
+    public string $cloudAntwort = '';
+
     public function anlegen(): void
     {
         $this->Create();
         $this->properties['DeviceType'] = '0x33'; // i-soft SAFE+
         $ref = new ReflectionMethod(JuControlDevice::class, 'RegisterVariables');
         $ref->invoke($this, '0x33');
+        $this->values['deviceState'] = 'online'; // sonst versucht RefreshData() erst ein Login
     }
 
-    public function refresh(array $device): void
+    public function refresh(array $device): mixed
     {
         $ref = new ReflectionMethod(JuControlDevice::class, 'RefreshData_iSoftSafe');
-        $ref->invoke($this, $device);
+        return $ref->invoke($this, $device);
+    }
+
+    public function SendCommand(string $url, array $data): string
+    {
+        return $this->cloudAntwort;
     }
 }
 
 $fixture = json_decode(file_get_contents(__DIR__ . '/fixtures/devicedata_isoft_safe_plus.json'), true, 512, JSON_THROW_ON_ERROR);
 
 /** Hülle um den Datensatz, wie sie RefreshData() aus „get device data" an RefreshData_iSoftSafe() reicht. */
-function geraet(array $deviceData): array
+function geraet(mixed $deviceData, string $szene = 'normal', int|string $disableTime = ''): array
 {
     return [
         'serialnumber'      => 'e8eb1bee706d',
+        'status'            => 'online',
         'installation_date' => '2022-03-15',
-        'waterscene'        => 'normal',
+        'waterscene'        => $szene,
+        'waterscene_normal' => 4,
+        'hardness_shower'   => 8,
+        'hardness_heater'   => 6,
+        'hardness_watering' => 12,
+        'hardness_washing'  => 2,
+        'disable_time'      => $disableTime,
         'data'              => [['dt' => '0x33', 'sv' => '3.2n', 'data' => $deviceData]],
     ];
+}
+
+/** Antwort der Cloud auf „get device data" mit genau diesem Gerät */
+function cloudAntwort(array $device): string
+{
+    return json_encode(['status' => 'ok', 'data' => [$device]], JSON_THROW_ON_ERROR);
 }
 
 /** Alle Datenfelder geleert — so sah der Störfall nach den Variablenänderungen aus. */
@@ -270,63 +111,210 @@ function pruefe(bool $ok, string $text): void
     echo($ok ? '  ok   ' : '  FEHL ') . $text . "\n";
 }
 
-function lauf(array $device, string $titel): JuControlHarness
+/** Führt RefreshData_iSoftSafe auf der übergebenen Instanz aus; Logs werden je Lauf gesammelt. */
+function lauf(JuControlHarness $m, array $device, string $titel): void
 {
-    echo "$titel\n";
-    $m = new JuControlHarness();
-    $GLOBALS['jcdTestModul'] = $m;
-    $m->anlegen();
+    echo "\n$titel\n";
+    $m->logs   = [];
     $m->writes = [];
-    $attrVorher = $m->ReadAttributeString('DeviceData');
     try {
         $m->refresh($device);
         pruefe(true, 'kein Abbruch');
     } catch (Throwable $t) {
         pruefe(false, 'kein Abbruch — ' . get_class($t) . ': ' . $t->getMessage());
     }
-    $m->attrVorher = $attrVorher;
-    return $m;
 }
 
-/* 1. Vollständiger Datensatz: wird normal verarbeitet */
-$m = lauf(geraet($fixture), 'Vollständiger Datensatz');
-$werte = [];
-foreach ($m->writes as [$ident, $wert]) {
-    $werte[$ident] = $wert;
+/** Idents, deren Wert vom Soll abweicht (ohne die ausgenommenen) */
+function abweichungen(array $ist, array $soll, array $ausser = []): array
+{
+    $diff = [];
+    foreach ($soll as $ident => $wert) {
+        if (!in_array($ident, $ausser, true) && ($ist[$ident] ?? null) !== $wert) {
+            $diff[] = sprintf('%s=%s statt %s', $ident, var_export($ist[$ident] ?? null, true), var_export($wert, true));
+        }
+    }
+    return $diff;
 }
-pruefe(($werte['deviceID'] ?? null) === (string)hexdec('00039D0C'), 'Geräte-ID aus Index 3 gesetzt');
-pruefe(($werte['swVersion'] ?? null) === '3.02', 'Softwareversion 3.02 aus Index 1');
-pruefe(($werte['hasEmergencySupply'] ?? null) === true, 'Notstrommodul erkannt');
-pruefe(($werte['wsMaxWaterFlow'] ?? null) === 2000, 'Max. Durchfluss 2000 l/h aus Block 792 (steht hinter der decbin-Zeile)');
+
+function logsMitStufe(JuControlHarness $m, int $stufe): array
+{
+    return array_values(array_map(static fn($l) => $l[1], array_filter($m->logs, static fn($l) => $l[0] === $stufe)));
+}
+
+function pruefeUnveraendert(JuControlHarness $m, array $soll, string $attrSoll, array $ausser = []): void
+{
+    $diff = abweichungen($m->werte(), $soll, $ausser);
+    pruefe($diff === [], 'Variablen unverändert' . ($diff === [] ? '' : ' — ' . implode(', ', $diff)));
+    pruefe($m->ReadAttributeString('DeviceData') === $attrSoll, 'Attribut DeviceData unverändert');
+}
+
+function pruefeProtokoll(JuControlHarness $m, int $warnungen, int $hinweise): void
+{
+    $w = logsMitStufe($m, KL_WARNING);
+    $h = logsMitStufe($m, KL_NOTIFY);
+    pruefe(count($w) === $warnungen, sprintf('%d Warnung(en) protokolliert (%d: %s)', $warnungen, count($w), implode(' | ', $w)));
+    pruefe(count($h) === $hinweise, sprintf('%d Hinweis(e) protokolliert (%d: %s)', $hinweise, count($h), implode(' | ', $h)));
+}
+
+$m = new JuControlHarness();
+$m->anlegen();
+
+/* A. Vollständiger Datensatz: wird normal verarbeitet und liefert den Sollstand */
+lauf($m, geraet($fixture), 'A. Vollständiger Datensatz');
+$werte = $m->werte();
+pruefe($werte['deviceID'] === '236812', 'Geräte-ID 236812 aus Block 3');
+pruefe($werte['swVersion'] === '3.02', 'Softwareversion 3.02 aus Block 1');
+pruefe($werte['hwVersion'] === '5.10', 'Hardwareversion 5.10 aus Block 2');
+pruefe($werte['hasEmergencySupply'] === true, 'Notstrommodul erkannt (Block 790)');
+pruefe($werte['batteryState'] === 25, 'Batteriestand 25 % aus Block 93');
+pruefe($werte['nextService'] === 29, 'nächste Wartung in 29 Tagen aus Block 7');
+pruefe($werte['wsMaxWaterFlow'] === 2000, 'Max. Durchfluss 2000 l/h aus Block 792');
+pruefe($werte['activeScene'] === 0 && $werte['remainingTime'] === 0, 'keine Wasserszene aktiv');
 pruefe($m->ReadAttributeString('DeviceData') === json_encode($fixture), 'Attribut DeviceData übernommen');
+pruefeProtokoll($m, 0, 0);
+$soll     = $werte;
+$attrSoll = $m->ReadAttributeString('DeviceData');
 
-/* 2. Alle Felder leer, Blöcke melden weiterhin st=OK */
-$m = lauf(geraet(alleFelderLeer($fixture)), 'Alle Datenfelder leer (st=OK)');
-pruefe($m->writes === [], 'keine Variable geschrieben (' . count($m->writes) . ' Schreibvorgänge)');
-pruefe($m->ReadAttributeString('DeviceData') === $m->attrVorher, 'Attribut DeviceData unverändert');
+/* B. Alle Felder leer, Blöcke melden weiterhin st=OK: nichts wird angefasst, eine Warnung */
+lauf($m, geraet(alleFelderLeer($fixture)), 'B. Alle Datenfelder leer (st=OK)');
+pruefeUnveraendert($m, $soll, $attrSoll);
+pruefe($m->writes === [], 'kein SetValue (' . count($m->writes) . ' Schreibvorgänge)');
+pruefeProtokoll($m, 1, 0);
+pruefe(str_contains(logsMitStufe($m, KL_WARNING)[0] ?? '', '790'), 'Warnung nennt die betroffenen Blöcke');
 
-/* 3. Nur Block 792 gekürzt, Rest intakt */
-$teil        = $fixture;
+/* C. Nur Block 792 gekürzt, dazu läuft eine Duschszene: blockunabhängige Werte werden weiter gepflegt */
+$teil               = $fixture;
 $teil['792']['data'] = '2:003C';
-$m = lauf(geraet($teil), 'Nur Block 792 gekürzt');
-pruefe($m->writes === [], 'keine Variable geschrieben (' . count($m->writes) . ' Schreibvorgänge)');
+lauf($m, geraet($teil, 'shower', time() + 3600), 'C. Nur Block 792 gekürzt, Duschszene aktiv');
+pruefeUnveraendert($m, $soll, $attrSoll, ['activeScene', 'remainingTime', 'targetHardness']);
+$werte = $m->werte();
+pruefe($werte['activeScene'] === 1, 'Wasserszene Dusche trotzdem übernommen');
+pruefe($werte['remainingTime'] >= 59, 'Restlaufzeit der Szene trotzdem gepflegt (' . $werte['remainingTime'] . ' min)');
+pruefe($werte['targetHardness'] === 8, 'Sollhärte der Duschszene trotzdem gesetzt');
+pruefe($werte['wsMaxWaterFlow'] === 2000, 'Block-792-Werte unverändert');
+pruefeProtokoll($m, 0, 0); // Störung besteht seit B, keine erneute Warnung
 
-/* 4. Block 790 fehlt ganz */
-$ohne790 = $fixture;
-unset($ohne790['790']);
-$m = lauf(geraet($ohne790), 'Block 790 fehlt');
-pruefe($m->writes === [], 'keine Variable geschrieben (' . count($m->writes) . ' Schreibvorgänge)');
+/* D. Wieder vollständig: Sollstand, ein Hinweis auf die Erholung */
+lauf($m, geraet($fixture), 'D. Wieder vollständig');
+pruefeUnveraendert($m, $soll, $attrSoll);
+pruefeProtokoll($m, 0, 1);
 
-/* 5. Block 792 fehlt ganz (Gerät ohne Leckageschutz-Block): Rest wird verarbeitet */
+/* E. Nur Block 3 leer, die großen Blöcke 790–792 intakt: Geräte-ID bleibt stehen */
+$nur3        = $fixture;
+$nur3['3']['data'] = '';
+$nur3['1']['data'] = '';
+$nur3['7']['data'] = '';
+$nur3['93']['data'] = '';
+lauf($m, geraet($nur3), 'E. Blöcke 1, 3, 7 und 93 leer, 790–792 intakt');
+pruefeUnveraendert($m, $soll, $attrSoll);
+pruefeProtokoll($m, 1, 0);
+pruefe(str_contains(logsMitStufe($m, KL_WARNING)[0] ?? '', '3'), 'Warnung nennt Block 3');
+
+/* F. Wieder vollständig */
+lauf($m, geraet($fixture), 'F. Wieder vollständig');
+pruefeUnveraendert($m, $soll, $attrSoll);
+pruefeProtokoll($m, 0, 1);
+
+/* G. Block 791 fehlt ganz (Gerät liefert ihn nicht), Block 1 meldet eine neue Version */
+$ohne791 = $fixture;
+unset($ohne791['791']);
+$ohne791['1']['data'] = '6E0303';
+lauf($m, geraet($ohne791), 'G. Block 791 fehlt, neue Softwareversion in Block 1');
+$diff = abweichungen($m->werte(), $soll, ['swVersion']);
+pruefe($diff === [], 'übrige Variablen unverändert' . ($diff === [] ? '' : ' — ' . implode(', ', $diff)));
+pruefe($m->werte()['swVersion'] === '3.03', 'Softwareversion 3.03 übernommen');
+pruefe($m->ReadAttributeString('DeviceData') === json_encode($ohne791), 'Attribut DeviceData übernommen (fehlender Block ist keine Störung)');
+pruefeProtokoll($m, 0, 0);
+
+/* H. Block 792 fehlt ganz (Gerät ohne Leckageschutz-Block): Rest wird verarbeitet */
 $ohne792 = $fixture;
 unset($ohne792['792']);
-$m = lauf(geraet($ohne792), 'Block 792 fehlt, 790/791 vollständig');
-$werte = [];
-foreach ($m->writes as [$ident, $wert]) {
-    $werte[$ident] = $wert;
+lauf($m, geraet($ohne792), 'H. Block 792 fehlt, 790/791 vollständig');
+$diff = abweichungen($m->werte(), $soll, ['swVersion']);
+pruefe($diff === [], 'Variablen unverändert' . ($diff === [] ? '' : ' — ' . implode(', ', $diff)));
+pruefe($m->ReadAttributeString('DeviceData') === json_encode($ohne792), 'Attribut DeviceData übernommen');
+pruefeProtokoll($m, 0, 0);
+
+/* I. Urlaubsmodus schalten, während das Attribut keinen Block 792 hat */
+echo "\nI. RequestAction Urlaubsmodus ohne Block 792 im Attribut\n";
+$m->logs   = [];
+$m->writes = [];
+try {
+    $m->RequestAction('wsHolidayMode', 1);
+    pruefe(true, 'kein Abbruch');
+} catch (Throwable $t) {
+    pruefe(false, 'kein Abbruch — ' . get_class($t) . ': ' . $t->getMessage());
 }
-pruefe(($werte['swVersion'] ?? null) === '3.02', 'Softwareversion trotzdem gesetzt');
-pruefe(!array_key_exists('wsMaxWaterFlow', $werte), 'Block-792-Werte nicht angefasst');
+pruefe($m->writes === [], 'Urlaubsmodus nicht geschrieben');
+pruefeProtokoll($m, 1, 0);
+
+/* J. Block 790 mit 66 Zeichen, aber ohne „N:"-Präfix */
+$ohnePraefix = $fixture;
+$ohnePraefix['790']['data'] = substr($fixture['790']['data'], 2) . '00';
+$attrVorher = $m->ReadAttributeString('DeviceData');
+$sollVorher = $m->werte();
+lauf($m, geraet($ohnePraefix), 'J. Block 790 ohne Blockpräfix (66 Zeichen)');
+pruefeUnveraendert($m, $sollVorher, $attrVorher);
+pruefeProtokoll($m, 1, 0);
+
+/* K. Datenliste enthält statt des Blockfelds einen Leerstring */
+lauf($m, geraet(''), 'K. Datenfeld ist kein Array');
+pruefeUnveraendert($m, $sollVorher, $attrVorher);
+pruefeProtokoll($m, 0, 0); // Störung besteht seit J
+
+/* L. Wieder vollständig: zurück auf den Sollstand */
+lauf($m, geraet($fixture), 'L. Wieder vollständig');
+pruefeUnveraendert($m, $soll, $attrSoll);
+pruefeProtokoll($m, 0, 1);
+
+/* M. Frische Instanz (Attribut leer): Urlaubsmodus schalten darf nicht abstürzen */
+echo "\nM. RequestAction Urlaubsmodus auf frischer Instanz\n";
+$frisch = new JuControlHarness();
+$frisch->anlegen();
+try {
+    $frisch->RequestAction('wsHolidayMode', 1);
+    pruefe(true, 'kein Abbruch');
+} catch (Throwable $t) {
+    pruefe(false, 'kein Abbruch — ' . get_class($t) . ': ' . $t->getMessage());
+}
+pruefe($frisch->writes === [], 'Urlaubsmodus nicht geschrieben');
+pruefeProtokoll($frisch, 1, 0);
+
+/* N. RefreshData(): Gerät ohne Datenliste ist kein falscher Gerätetyp und stoppt den Timer nicht */
+echo "\nN. RefreshData() mit leerer Datenliste\n";
+$rd = new JuControlHarness();
+$rd->anlegen();
+$geraetOhneDaten         = geraet($fixture);
+$geraetOhneDaten['data'] = [];
+$rd->cloudAntwort        = cloudAntwort($geraetOhneDaten);
+try {
+    $ergebnis = $rd->RefreshData();
+    pruefe(true, 'kein Abbruch');
+} catch (Throwable $t) {
+    $ergebnis = null;
+    pruefe(false, 'kein Abbruch — ' . get_class($t) . ': ' . $t->getMessage());
+}
+pruefe(!in_array(202, $rd->status, true), 'kein Status „falscher Gerätetyp" (' . implode(',', $rd->status) . ')');
+pruefe(($rd->timer['RefreshTimer'] ?? null) !== 0, 'RefreshTimer nicht abgeschaltet');
+pruefe($ergebnis === false, 'RefreshData meldet Misserfolg');
+pruefeProtokoll($rd, 1, 0);
+
+/* O. RefreshData() mit vollständigem Datensatz danach: Erfolg, Erholung protokolliert */
+echo "\nO. RefreshData() mit vollständigem Datensatz\n";
+$rd->logs         = [];
+$rd->cloudAntwort = cloudAntwort(geraet($fixture));
+try {
+    $ergebnis = $rd->RefreshData();
+    pruefe(true, 'kein Abbruch');
+} catch (Throwable $t) {
+    $ergebnis = null;
+    pruefe(false, 'kein Abbruch — ' . get_class($t) . ': ' . $t->getMessage());
+}
+pruefe($ergebnis === true, 'RefreshData meldet Erfolg');
+pruefe($rd->werte()['deviceType'] === 'i-soft SAFE+' && $rd->werte()['deviceID'] === '236812', 'Gerätetyp und Geräte-ID gesetzt');
+pruefe(abweichungen($rd->werte(), $soll, ['Hardness_Washing', 'Hardness_Shower', 'Hardness_Heater', 'Hardness_Watering', 'Hardness_Normal', 'Time_Shower', 'Time_Washing', 'Time_Heater', 'Time_Watering', 'deviceType']) === [], 'Variablen wie beim direkten Lauf');
+pruefeProtokoll($rd, 0, 1);
 
 echo "\n$pruefungen Prüfungen, " . count($fehler) . " Fehler\n";
 exit($fehler === [] ? 0 : 1);

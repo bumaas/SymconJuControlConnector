@@ -25,7 +25,8 @@ class JuControlDevice extends IPSModule
     //attributes
     private const ATTR_TOKEN_KNM  = 'AccessTokenMyJudoEU';
     private const ATTR_TOKEN_JUDO = 'AccessTokenMyJudoCom';
-    private const ATTR_DEVICEDATA = 'DeviceData';
+    private const ATTR_DEVICEDATA       = 'DeviceData';
+    private const ATTR_INCOMPLETE_SINCE = 'IncompleteDataSince'; // Beginn einer Störung der Cloud-Daten, leer = keine
 
     //variable idents
     private const VAR_IDENT_DEVICESTATE                 = 'deviceState';
@@ -74,6 +75,23 @@ class JuControlDevice extends IPSModule
     private const DT_I_SOFT_K_SAFE_PLUS = '0x67'; //kompakte SAFE+
     private const DT_I_SOFT_PLUS        = 'i-soft plus';
 
+    /**
+     * Erwartete Länge des Datenfelds je ausgewertetem Block der i-soft SAFE+ (Block 93: ohne
+     * bzw. mit Laufzeitangabe). Nur diese Blöcke wertet das Modul aus.
+     */
+    private const SAFE_BLOCK_LENGTHS = [
+        1   => [6],
+        2   => [4],
+        3   => [8],
+        7   => [12],
+        8   => [8],
+        93  => [10, 18],
+        94  => [8],
+        790 => [66],
+        791 => [66],
+        792 => [66],
+    ];
+
     public function Create(): void
     {
         //Never delete this line!
@@ -83,6 +101,7 @@ class JuControlDevice extends IPSModule
         $this->RegisterAttributeString(self::ATTR_TOKEN_KNM, "noToken");
         $this->RegisterAttributeString(self::ATTR_TOKEN_JUDO, "noToken");
         $this->RegisterAttributeString(self::ATTR_DEVICEDATA, '');
+        $this->RegisterAttributeString(self::ATTR_INCOMPLETE_SINCE, '');
 
         //timer
         $this->RegisterTimer("RefreshTimer", 0, 'JCD_RefreshData(' . $this->InstanceID . ');');
@@ -553,7 +572,12 @@ class JuControlDevice extends IPSModule
                 break;
             case self::VAR_IDENT_WATERSTOP_HOLIDAYMODE:
                 $deviceData = json_decode($this->ReadAttributeString(self::ATTR_DEVICEDATA), true);
-                $wsUrlaub   = str_pad(decbin($this->getInValue($deviceData, 792, 18)), 8, '0', STR_PAD_LEFT);
+                if (!is_array($deviceData) || !$this->isBlockUsable($deviceData, 792)) {
+                    // ohne vollständigen Block 792 lässt sich das Bitmuster nicht bilden (Störung der Cloud-Daten oder Gerät ohne Leckageschutz)
+                    $this->LogMessage('Holiday mode not set: no complete leakage protection data (block 792) available', KL_WARNING);
+                    return;
+                }
+                $wsUrlaub = str_pad(decbin($this->getInValue($deviceData, 792, 18)), 8, '0', STR_PAD_LEFT);
                 switch ($Value) {
                     case 1:
                         $wsUrlaub[6] = '1';
@@ -833,14 +857,24 @@ class JuControlDevice extends IPSModule
 
     }
 
-    private function RefreshData_iSoftSafe(array $device): void
+    /**
+     * Wertet den Datensatz einer i-soft SAFE+ / K SAFE+ aus.
+     *
+     * Die JUDO-Cloud meldet das Gerät zeitweise als „online" und die Blöcke mit st=OK, liefert
+     * aber leere oder gekürzte Datenfelder (beobachtet 06./08.09.2026, jeweils ab 03:00 Uhr für
+     * rund 40 Minuten). Jeder Wert wird deshalb nur übernommen, wenn sein Block vollständig ist
+     * (isBlockUsable); die übrigen Werte behalten ihren letzten Stand. Ein Block, den das Gerät
+     * gar nicht liefert (etwa 792 ohne Leckageschutz), ist keine Störung. Das Attribut DeviceData
+     * wird nur aus einem störungsfreien Datensatz übernommen.
+     *
+     * @return bool false, wenn mindestens ein gelieferter Block unvollständig war
+     */
+    private function RefreshData_iSoftSafe(array $device): bool
     {
-        $deviceData = $device['data'][0]['data'] ?? [];
-        if (!$this->isSafeDeviceDataComplete($deviceData)) {
-            // Werte und Attribut bleiben auf dem letzten vollständigen Stand
-            $this->SendDebug(__FUNCTION__, sprintf('device data incomplete (lu: %s) -> skipping refresh', $deviceData['lu'] ?? '?'), 0);
-            return;
-        }
+        $raw        = $device['data'][0]['data'] ?? null;
+        $deviceData = is_array($raw) ? $raw : [];
+        $degraded   = is_array($raw) ? $this->degradedBlocks($deviceData) : ['data'];
+        $this->trackIncompleteData($degraded, (string)($deviceData['lu'] ?? ''));
 
         /* Device S/N */
         $this->updateIfNecessary($device['serialnumber'], "deviceSN");
@@ -849,118 +883,106 @@ class JuControlDevice extends IPSModule
         $this->updateIfNecessary(strtotime($device['installation_date']), self::VAR_IDENT_INSTALLATION_DATE);
 
         /* Connectivity module version */
-        $this->updateIfNecessary($device['data'][0]['sv'], "ccuVersion");
-
-
-        $this->WriteAttributeString(self::ATTR_DEVICEDATA, json_encode($deviceData));
-
-        /* Emergency supply available */
-        $emergencyModuleData = $this->getInValue($deviceData, 790, 2);
-        if (strlen($emergencyModuleData) > 1) {
-            $emergencySupplyAvailable = (boolean)$emergencyModuleData[strlen($emergencyModuleData) - 2];
-        } else {
-            $emergencySupplyAvailable = false;
+        if (isset($device['data'][0]['sv'])) {
+            $this->updateIfNecessary($device['data'][0]['sv'], "ccuVersion");
         }
 
-        if ($emergencySupplyAvailable) {
-            $this->updateIfNecessary(true, "hasEmergencySupply");
+        if ($degraded === []) {
+            $this->WriteAttributeString(self::ATTR_DEVICEDATA, json_encode($deviceData));
+        }
 
-            $batteryValues = explode(':', $this->getInValue($deviceData, 93));
+        if ($this->isBlockUsable($deviceData, 790)) {
+            /* Emergency supply available */
+            $emergencyModuleData      = $this->getInValue($deviceData, 790, 2);
+            $emergencySupplyAvailable = (strlen($emergencyModuleData) > 1) && (bool)$emergencyModuleData[strlen($emergencyModuleData) - 2];
+            $this->updateIfNecessary($emergencySupplyAvailable, "hasEmergencySupply");
 
-            /* Battery percentage */
-            if (isset($batteryValues[0])) {
+            if ($emergencySupplyAvailable && $this->isBlockUsable($deviceData, 93)) {
+                $batteryValues = explode(':', $this->getInValue($deviceData, 93));
+
+                /* Battery percentage */
                 $this->updateIfNecessary((int)$batteryValues[0], self::VAR_IDENT_BATTERYSTATE);
+
+                /* Battery runtime */
+                if (count($batteryValues) > 1) {
+                    $batteryRuntime = sprintf('%d:%02d:%02d', (int)$batteryValues[3], (int)$batteryValues[2], (int)$batteryValues[1]);
+                    $this->updateIfNecessary($batteryRuntime, self::VAR_IDENT_BATTERYRUNTIME);
+                }
             }
 
-            /* Battery runtime */
-            if (count($batteryValues) > 1) {
-                $batteryRuntime = sprintf('%d:%02d:%02d', (int)$batteryValues[3], (int)$batteryValues[2], (int)$batteryValues[1]);
-                $this->updateIfNecessary($batteryRuntime, self::VAR_IDENT_BATTERYRUNTIME);
-            }
-        } else {
-            $this->updateIfNecessary(false, "hasEmergencySupply");
+            /* Input hardness */
+            $this->updateIfNecessary($this->getInValue($deviceData, 790, 26), self::VAR_IDENT_INPUT_HARDNESS);
+
+            /* currentFlow */
+            $this->updateIfNecessary($this->getInValue($deviceData, 790, 1617), self::VAR_IDENT_CURRENTFLOW);
+
+            /* read target hardness (wird unten von einer aktiven Wasserszene überschrieben) */
+            $this->updateIfNecessary($this->getInValue($deviceData, 790, 8), self::VAR_IDENT_TARGET_HARDNESS);
         }
 
         /* Active scene */
-        switch ($device['waterscene']) {
-            case 'shower':
-                $sceneValue = 1;
-                break;
-            case 'heaterfilling':
-                $sceneValue = 2;
-                break;
-            case 'watering':
-                $sceneValue = 3;
-                break;
-            case 'washing':
-                $sceneValue = 4;
-                break;
-            default:
-                $sceneValue = 0;
-                break;
-        }
+        $sceneValue = match ($device['waterscene'] ?? '') {
+            'shower' => 1,
+            'heaterfilling' => 2,
+            'watering' => 3,
+            'washing' => 4,
+            default => 0,
+        };
         $this->updateIfNecessary($sceneValue, self::VAR_IDENT_ACTIVESCENE);
 
-
         /* SW Version */
-        $this->updateIfNecessary($this->getInValue($deviceData, 1), self::VAR_IDENT_SWVERSION);
+        if ($this->isBlockUsable($deviceData, 1)) {
+            $this->updateIfNecessary($this->getInValue($deviceData, 1), self::VAR_IDENT_SWVERSION);
+        }
 
         /* HW Version */
-        $this->updateIfNecessary($this->getInValue($deviceData, 2), self::VAR_IDENT_HWVERSION);
+        if ($this->isBlockUsable($deviceData, 2)) {
+            $this->updateIfNecessary($this->getInValue($deviceData, 2), self::VAR_IDENT_HWVERSION);
+        }
 
         /* Device ID */
-        $this->updateIfNecessary($this->getInValue($deviceData, 3), "deviceID");
+        if ($this->isBlockUsable($deviceData, 3)) {
+            $this->updateIfNecessary($this->getInValue($deviceData, 3), "deviceID");
+        }
 
-        /* Service Info*/
-        $infoService = explode(':', $this->getInValue($deviceData, 7));
-        if (isset($infoService[0])) {
+        /* Service Info */
+        if ($this->isBlockUsable($deviceData, 7)) {
+            $infoService = explode(':', $this->getInValue($deviceData, 7));
             $nextService = (int)$infoService[0];
             $this->updateIfNecessary($nextService, self::VAR_IDENT_NEXT_SERVICE); //nächste Wartung in Tagen
             if ($nextService !== 0) {
                 $this->updateIfNecessary(strtotime("midnight + $nextService days"), self::VAR_IDENT_NEXT_SERVICE_DATE);
             }
-        }
-        if (isset($infoService[1])) {
-            $this->updateIfNecessary((int)$infoService[1], "totalService");
-        }
-
-        /* Total water*/
-        $totalWater = $this->getInValue($deviceData, 8);
-        if ($totalWater !== false) {
-            $this->updateIfNecessary($totalWater, self::VAR_IDENT_TOTAL_WATER);
+            if (isset($infoService[1])) {
+                $this->updateIfNecessary((int)$infoService[1], "totalService");
+            }
         }
 
-        /* Count regeneration */
-        $totalRegeneration = $this->getInValue($deviceData, 791, 3031);
-        if ($totalRegeneration !== '') {
-            $this->updateIfNecessary($totalRegeneration, self::VAR_IDENT_TOTAL_REGENERATION);
+        /* Total water */
+        if ($this->isBlockUsable($deviceData, 8)) {
+            $this->updateIfNecessary($this->getInValue($deviceData, 8), self::VAR_IDENT_TOTAL_WATER);
         }
 
-        /* Regeneration active*/
-        $this->updateIfNecessary($this->getInValue($deviceData, 791, 0), self::VAR_IDENT_REGENERATION);
+        if ($this->isBlockUsable($deviceData, 791)) {
+            /* Count regeneration */
+            $this->updateIfNecessary($this->getInValue($deviceData, 791, 3031), self::VAR_IDENT_TOTAL_REGENERATION);
 
-        /* Salt Info*/
-        $saltData = $this->getInValue($deviceData, 94);
-        if (@strpos($saltData, ':')) { // warning if needle is empty
-            $saltInfo         = explode(':', $saltData);
+            /* Regeneration active */
+            $this->updateIfNecessary($this->getInValue($deviceData, 791, 0), self::VAR_IDENT_REGENERATION);
+        }
+
+        /* Salt Info */
+        if ($this->isBlockUsable($deviceData, 94)) {
+            $saltInfo         = explode(':', $this->getInValue($deviceData, 94));
             $SaltLevel        = $saltInfo[0] / 1000; //Salzgewicht in kg
             $SaltLevelPercent = (int)(2 * $SaltLevel);
             $this->updateIfNecessary($SaltLevelPercent, self::VAR_IDENT_RANGESALTPERCENT);
             $this->updateIfNecessary(round($SaltLevel, 0, PHP_ROUND_HALF_UP), self::VAR_IDENT_SALTLEVEL);
-            $SaltRange = $saltInfo[1]; //Salzreichweite in Tagen
-            $this->updateIfNecessary($SaltRange, self::VAR_IDENT_RANGESALTDAYS);
+            $this->updateIfNecessary($saltInfo[1], self::VAR_IDENT_RANGESALTDAYS); //Salzreichweite in Tagen
         }
 
-        /* Input hardness */
-        $inputHardness = $this->getInValue($deviceData, 790, 26);
-        $this->updateIfNecessary($inputHardness, self::VAR_IDENT_INPUT_HARDNESS);
-
-        /* currentFlow */
-        $currentFlow = $this->getInValue($deviceData, 790, 1617);
-        $this->updateIfNecessary($currentFlow, self::VAR_IDENT_CURRENTFLOW);
-
         //index 792
-        if (isset($deviceData[792]) && ($deviceData[792]['st'] === 'OK')) {
+        if ($this->isBlockUsable($deviceData, 792)) {
             /* water stop */
             $leckageschutzStatusflag = $this->getInValue($deviceData, 792, 0);
             if (strlen($leckageschutzStatusflag) === 8) {
@@ -972,8 +994,6 @@ class JuControlDevice extends IPSModule
 
             //Sleepmodus
             $standbyMode = $this->getInValue($deviceData, 792, 9);
-            //$this->SendDebug(__FUNCTION__, 'standbymode: '. $standbyMode, KL_NOTIFY);
-
             $this->updateIfNecessary($standbyMode > 0, self::VAR_IDENT_SLEEPMODE);
 
             //Urlaub
@@ -1022,14 +1042,9 @@ class JuControlDevice extends IPSModule
             $this->updateIfNecessary($maxZeit, self::VAR_IDENT_WATERSTOP_MAXPERIODOFUSE);
         }
 
-
-        /* read target hardness */
-        $this->updateIfNecessary($this->getInValue($deviceData, 790, 8), self::VAR_IDENT_TARGET_HARDNESS);
-
-
         /* Remaining time of active water scene */
         if ($this->GetValue(self::VAR_IDENT_ACTIVESCENE) !== 0) {
-            if ($device['disable_time'] !== '') {
+            if (($device['disable_time'] ?? '') !== '') {
                 $remainingTime = (((int)$device['disable_time'] - time()) / 60) + 1;
                 $this->updateIfNecessary(max((int)$remainingTime, 0), "remainingTime");
                 /* update target hardness due to active waterscene */
@@ -1058,10 +1073,13 @@ class JuControlDevice extends IPSModule
         } else {
             $this->updateIfNecessary(0, "remainingTime");
         }
+
+        return $degraded === [];
     }
 
     public function RefreshData(): bool
     {
+        $complete = true;
         try {
             if ($this->GetValue(self::VAR_IDENT_DEVICESTATE) !== 'online') {
                 // if the device isn't online, first try to reconnect
@@ -1145,7 +1163,12 @@ class JuControlDevice extends IPSModule
                 switch ($this->ReadPropertyString(self::PROP_DEVICETYPE)) {
                     case self::DT_I_SOFT_SAFE_PLUS:
                     case self::DT_I_SOFT_K_SAFE_PLUS:
-                        $dt = $device['data'][0]['dt'];
+                        $dt = $device['data'][0]['dt'] ?? null;
+                        if ($dt === null) {
+                            // Datensatz ohne Datenliste: unvollständige Cloud-Daten, kein falscher Gerätetyp
+                            $this->trackIncompleteData(['data'], '');
+                            return false;
+                        }
                         if (in_array($dt, [self::DT_I_SOFT_SAFE_PLUS, self::DT_I_SOFT_K_SAFE_PLUS], true)) {
                             $this->SetStatus(IS_ACTIVE);
                             $this->updateIfNecessary(
@@ -1164,7 +1187,7 @@ class JuControlDevice extends IPSModule
                             return false;
                         }
 
-                        $this->RefreshData_iSoftSafe($device);
+                        $complete = $this->RefreshData_iSoftSafe($device);
                         break;
 
                     case self::DT_I_SOFT_PLUS:
@@ -1271,12 +1294,13 @@ class JuControlDevice extends IPSModule
                 /* Token not valid -> try to log in again one time and wait for next RefreshData! */
                 $this->Login();
             }
-        } catch (Exception $e) {
+        } catch (Throwable $e) {
             $this->SendDebug(__FUNCTION__, 'Error during data crawling: ' . $e->getMessage(), 0);
             $this->LogMessage('Error during data crawling: ' . $e->getMessage(), KL_ERROR);
+            return false;
         }
 
-        return true;
+        return $complete;
     }
 
     private function Login(): bool
@@ -1416,42 +1440,66 @@ class JuControlDevice extends IPSModule
 
 
     /**
-     * Prüft, ob ein i-soft-SAFE+-Datensatz auswertbar ist.
-     *
-     * Die JUDO-Cloud meldet das Gerät zeitweise als „online“ und die Blöcke mit st=OK, liefert
-     * aber leere oder gekürzte Datenfelder (beobachtet 06./08.09.2026, jeweils ab 03:00 Uhr für
-     * rund 40 Minuten). getInValue() gäbe dafür Leerstrings zurück: Geräte-ID, Versionen und
-     * Notstrommodul würden mit Leerwerten überschrieben, und decbin('') im Block 792 bräche den
-     * Lauf mit einem TypeError ab. Ein solcher Datensatz wird deshalb komplett übersprungen.
-     *
-     * Die Blöcke 790 und 791 müssen vorhanden sein; der Leckageschutz-Block 792 ist optional,
-     * muss aber vollständig sein, wenn er mit st=OK gemeldet wird.
+     * Ist das Datenfeld des Blocks in der erwarteten Form vorhanden (st=OK, erwartete Länge,
+     * bei 790–792 zusätzlich das Präfix „N:" vor 64 Hex-Zeichen)?
      */
-    private function isSafeDeviceDataComplete(array $deviceData): bool
+    private function isBlockUsable(array $deviceData, int $index): bool
     {
-        foreach ([790, 791, 792] as $index) {
+        $block = $deviceData[$index] ?? null;
+        if (!is_array($block) || (($block['st'] ?? '') !== 'OK') || !is_string($block['data'] ?? null)) {
+            return false;
+        }
+        $data = $block['data'];
+        if (!in_array(strlen($data), self::SAFE_BLOCK_LENGTHS[$index] ?? [], true)) {
+            return false;
+        }
+        return ($index < 790) || (preg_match('/^\d+:[0-9A-F]{64}$/i', $data) === 1);
+    }
+
+    /**
+     * Blöcke, die die Cloud mit st=OK meldet, deren Datenfeld aber nicht der erwarteten Form
+     * entspricht — die Signatur der Störung. Fehlende Blöcke und Blöcke mit st≠OK zählen nicht dazu.
+     *
+     * @return list<int>
+     */
+    private function degradedBlocks(array $deviceData): array
+    {
+        $degraded = [];
+        foreach (array_keys(self::SAFE_BLOCK_LENGTHS) as $index) {
             $block = $deviceData[$index] ?? null;
-            if ($block === null) {
-                if ($index === 792) {
-                    continue;
-                }
-                $this->SendDebug(__FUNCTION__, "block $index missing", 0);
-                return false;
-            }
-            if (($block['st'] ?? '') !== 'OK') {
-                if ($index === 792) {
-                    continue; // wird in RefreshData_iSoftSafe ohnehin übersprungen
-                }
-                $this->SendDebug(__FUNCTION__, sprintf('block %s: st=%s', $index, $block['st'] ?? '?'), 0);
-                return false;
-            }
-            $length = strlen($block['data'] ?? '');
-            if ($length !== 66) {
-                $this->SendDebug(__FUNCTION__, sprintf('block %s: data length %d instead of 66', $index, $length), 0);
-                return false;
+            if (is_array($block) && (($block['st'] ?? '') === 'OK') && !$this->isBlockUsable($deviceData, $index)) {
+                $degraded[] = $index;
             }
         }
-        return true;
+        return $degraded;
+    }
+
+    /**
+     * Protokolliert den Übergang in die Störung als Warnung und die Erholung als Hinweis —
+     * nicht jeden Lauf. Der Beginn steht im Attribut IncompleteDataSince (leer = keine Störung).
+     *
+     * @param list<int|string> $degraded betroffene Blöcke ('data' = Datenliste fehlt ganz)
+     */
+    private function trackIncompleteData(array $degraded, string $lu): void
+    {
+        $since = $this->ReadAttributeString(self::ATTR_INCOMPLETE_SINCE);
+        if ($degraded !== []) {
+            $this->SendDebug(__FUNCTION__, sprintf('incomplete blocks: %s (lu: %s)', implode(', ', $degraded), $lu), 0);
+            if ($since === '') {
+                $this->WriteAttributeString(self::ATTR_INCOMPLETE_SINCE, (string)time());
+                $this->LogMessage(
+                    sprintf(
+                        'Device data from the JUDO cloud incomplete (block %s, lu: %s) - affected values keep their last state until complete data arrives',
+                        implode(', ', $degraded),
+                        $lu
+                    ),
+                    KL_WARNING
+                );
+            }
+        } elseif ($since !== '') {
+            $this->WriteAttributeString(self::ATTR_INCOMPLETE_SINCE, '');
+            $this->LogMessage(sprintf('Device data from the JUDO cloud complete again after %d minutes', intdiv(time() - (int)$since, 60)), KL_NOTIFY);
+        }
     }
 
     private function getInValue(array $deviceData, int $index = null, int $subIndex = null)
@@ -1533,7 +1581,7 @@ class JuControlDevice extends IPSModule
 
             case 790:
                 $value = '';
-                if ((strlen($data) === 66) && !is_null($subIndex)) {
+                if ($this->isBlockUsable($deviceData, $index) && !is_null($subIndex)) {
                     $data = explode(':', $data)[1];
                     switch ($subIndex) {
                         case 2:
@@ -1560,7 +1608,7 @@ class JuControlDevice extends IPSModule
 
             case 791:
                 $value = '';
-                if (strlen($data) === 66) {
+                if ($this->isBlockUsable($deviceData, $index)) {
                     if (!is_null($subIndex)) {
                         $data = explode(':', $data)[1];
                         switch ($subIndex) {
@@ -1584,7 +1632,7 @@ class JuControlDevice extends IPSModule
 
             case 792:
                 $value = '';
-                if (strlen($data) === 66) {
+                if ($this->isBlockUsable($deviceData, $index)) {
                     if (!is_null($subIndex)) {
                         $data = explode(':', $data)[1];
                         switch ($subIndex) {
