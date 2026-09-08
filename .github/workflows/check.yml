@@ -8,6 +8,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: true # tests/stubs (symcon/SymconStubs, gepinnt)
 
       - uses: shivammathur/setup-php@v2
         with:
@@ -16,12 +18,11 @@ jobs:
       - name: PHP syntax
         run: |
           php -l JuControlDevice/module.php
-          php -l tests/symcon_stubs.php
           php -l tests/check-incomplete-devicedata.php
 
       - name: JSON validity
         run: |
-          find . -name '*.json' -not -path './.style/*' -not -path './.git/*' -print0 |
+          find . -name '*.json' -not -path './.style/*' -not -path './.git/*' -not -path './tests/stubs/*' -print0 |
             xargs -0 -n1 php -r 'json_decode(file_get_contents($argv[1]), false, 512, JSON_THROW_ON_ERROR); echo $argv[1], " ok\n";' --
 
       - name: Incomplete device data regression test
