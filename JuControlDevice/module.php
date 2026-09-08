@@ -129,6 +129,7 @@ class JuControlDevice extends IPSModule
         $this->RegisterProfileInteger("JCD.Days", "Clock", "", $this->Translate(' days'), 0, 0, 0);
         $this->RegisterProfileInteger('JCD.kg', '', '', ' kg', 0, 0, 0);
         $this->RegisterProfileInteger("JCD.Liter", "Wave", "", $this->Translate(' liters'), 0, 99999999, 1);
+        $this->RegisterProfileInteger("JCD.Hours", "Clock", "", $this->Translate(' hours'), 0, 10, 1); // Wasserszenen-Zeiten aller Gerätetypen
         $this->RegisterProfileInteger('JCD.Minutes.WSMaxPeriodOfUse', 'Clock', '', $this->Translate(' minutes'), 0, 600, 10);
         $this->RegisterProfileInteger('JCD.Waterscene', "Drops", "", "", 0, 4, 0);
         $this->RegisterProfileInteger('JCD.Liters.WSMaxQuantity', '', '', " l", 0, 3000, 100);
@@ -247,7 +248,6 @@ class JuControlDevice extends IPSModule
         if (in_array($deviceType, [self::DT_I_SOFT_SAFE_PLUS, self::DT_I_SOFT_K_SAFE_PLUS], true)) {
             //i-soft safe profiles
             $this->RegisterProfileInteger("JCD.Minutes", "Clock", "", $this->Translate(' minutes'), 0, 0, 0);
-            $this->RegisterProfileInteger("JCD.Hours", "Clock", "", $this->Translate(' hours'), 0, 10, 1);
             $this->RegisterProfileInteger('JCD.WSHolidayMode', '', '', '', 0, 3, 0);
             IPS_SetVariableProfileAssociation('JCD.WSHolidayMode', 0, $this->Translate('no holiday mode'), '', -1);
             IPS_SetVariableProfileAssociation('JCD.WSHolidayMode', 1, $this->Translate('Holiday mode 1'), '', -1);
