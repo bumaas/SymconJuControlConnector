@@ -27,6 +27,7 @@ class JuControlDevice extends IPSModule
     private const ATTR_TOKEN_JUDO = 'AccessTokenMyJudoCom';
     private const ATTR_DEVICEDATA       = 'DeviceData';
     private const ATTR_INCOMPLETE_SINCE = 'IncompleteDataSince'; // Beginn einer Störung der Cloud-Daten, leer = keine
+    private const ATTR_DEVICE_DT        = 'DeviceDt'; // Gerätekennung laut Cloud-Datensatz (0x33/0x67), maßgeblich für Gerätekommandos
 
     //variable idents
     private const VAR_IDENT_DEVICESTATE                 = 'deviceState';
@@ -105,6 +106,7 @@ class JuControlDevice extends IPSModule
         $this->RegisterAttributeString(self::ATTR_TOKEN_JUDO, "noToken");
         $this->RegisterAttributeString(self::ATTR_DEVICEDATA, '');
         $this->RegisterAttributeString(self::ATTR_INCOMPLETE_SINCE, '');
+        $this->RegisterAttributeString(self::ATTR_DEVICE_DT, '');
 
         //timer
         $this->RegisterTimer("RefreshTimer", 0, 'JCD_RefreshData(' . $this->InstanceID . ');');
@@ -498,7 +500,11 @@ class JuControlDevice extends IPSModule
         if ($response === false) {
             return false;
         }
-        $json = json_decode($response, true, 512, JSON_THROW_ON_ERROR);
+        try {
+            $json = json_decode($response, true, 512, JSON_THROW_ON_ERROR);
+        } catch (JsonException) {
+            return false; // z. B. leere Antwort auf eine falsche Gerätekennung
+        }
         return (isset($json['status']) && ($json['status'] === 'ok'));
     }
 
@@ -519,7 +525,8 @@ class JuControlDevice extends IPSModule
 
         $this->SendDebug(__FUNCTION__, sprintf('Ident: %s, Value: %s', $Ident, $Value), 0);
 
-        $dt              = $this->ReadPropertyString(self::PROP_DEVICETYPE); // Gerätekennung der Instanz (0x33 SAFE+, 0x67 K SAFE+)
+        // Gerätekennung laut Cloud (0x33 SAFE+, 0x67 K SAFE+); vor dem ersten RefreshData die Property
+        $dt              = $this->ReadAttributeString(self::ATTR_DEVICE_DT) ?: $this->ReadPropertyString(self::PROP_DEVICETYPE);
         $strSerialnumber = '&serialnumber=';
 
         switch ($Ident) {
@@ -1193,6 +1200,10 @@ class JuControlDevice extends IPSModule
                         }
                         if (in_array($dt, [self::DT_I_SOFT_SAFE_PLUS, self::DT_I_SOFT_K_SAFE_PLUS], true)) {
                             $this->SetStatus(IS_ACTIVE);
+                            if ($this->ReadAttributeString(self::ATTR_DEVICE_DT) !== $dt) {
+                                // Die Property kann abweichen (K SAFE+ als „SAFE+" eingerichtet); Kommandos mit falscher Kennung beantwortet die Cloud leer
+                                $this->WriteAttributeString(self::ATTR_DEVICE_DT, $dt);
+                            }
                             $this->updateIfNecessary(
                                 match ($dt) {
                                     self::DT_I_SOFT_SAFE_PLUS => 'i-soft SAFE+',

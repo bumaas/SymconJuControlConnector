@@ -93,4 +93,28 @@ pruefe(enthaelt($k, 'dt=0x67&index=60&data=8&da=0x1'), 'Wunschhärte mit dt=0x67
 schalte($m, 'Regeneration', true, 'F. SAFE+: Regeneration starten');
 pruefe(enthaelt($m, 'dt=0x33&index=65&data=&da=0x1'), 'Regeneration mit dt=0x33 — ' . letztesKommando($m));
 
+/* G. Property sagt SAFE+ (0x33), die Cloud meldet das Gerät als K SAFE+ (0x67) — so ist die K SAFE+
+ *    auf dem nuc eingerichtet. Maßgeblich ist die Kennung aus dem Cloud-Datensatz, den RefreshData liest;
+ *    mit dt=0x33 antwortet die Cloud der K SAFE+ leer (nachgestellt 08.09.2026). */
+$fixture = json_decode(file_get_contents(__DIR__ . '/fixtures/devicedata_isoft_safe_plus.json'), true, 512, JSON_THROW_ON_ERROR);
+$g = neueInstanz('0x33');
+$g->cloudAntwort = json_encode(['status' => 'ok', 'data' => [[
+    'serialnumber' => 'k-safe', 'status' => 'online', 'installation_date' => '2024-05-01', 'waterscene' => 'normal',
+    'waterscene_normal' => 4, 'hardness_shower' => 8, 'hardness_heater' => 6, 'hardness_watering' => 12, 'hardness_washing' => 2,
+    'disable_time' => '', 'data' => [['dt' => '0x67', 'sv' => '4.2p', 'data' => $fixture]],
+]]], JSON_THROW_ON_ERROR);
+echo "\nG. Property 0x33, Cloud meldet dt=0x67\n";
+pruefe($g->RefreshData() === true, 'RefreshData erfolgreich');
+pruefe($g->werte()['deviceType'] === 'i-soft K SAFE+', 'Gerätetyp aus der Cloud erkannt');
+schalte($g, 'saltLevel', 29, 'G. Salzvorrat 29 kg');
+pruefe(enthaelt($g, 'dt=0x67&index=94&data=4871&da=0x1'), 'Kommando mit der Cloud-Kennung 0x67 — ' . letztesKommando($g));
+schalte($g, 'Regeneration', true, 'G. Regeneration starten');
+pruefe(enthaelt($g, 'dt=0x67&index=65&data=&da=0x1'), 'Regeneration mit 0x67 — ' . letztesKommando($g));
+
+/* H. Leere Cloud-Antwort (so reagiert die Cloud auf eine falsche Kennung): kein Abbruch, Fehler im Protokoll */
+$g->kommandoAntwort = '';
+schalte($g, 'saltLevel', 10, 'H. Cloud antwortet leer');
+pruefe($g->werte()['saltLevel'] === 29, 'Variable saltLevel unverändert (29)');
+pruefe(logsMitStufe($g, KL_ERROR) !== [], 'Fehler protokolliert');
+
 ergebnis();
