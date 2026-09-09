@@ -21,11 +21,13 @@ jobs:
           php -l tests/harness.php
           php -l tests/check-incomplete-devicedata.php
           php -l tests/check-salt-refill.php
+          php -l tests/check-webclient-response.php
+          php -l libs/WebClient.php
 
       - name: Code style (schlankes eigenes Regelwerk, siehe .php-cs-fixer.php)
         run: |
           wget -q https://cs.symfony.com/download/php-cs-fixer-v3.phar
-          PHP_CS_FIXER_IGNORE_ENV=1 php php-cs-fixer-v3.phar fix --dry-run --diff --using-cache=no
+          PHP_CS_FIXER_IGNORE_ENV=1 php php-cs-fixer-v3.phar fix --dry-run --diff --using-cache=no --allow-risky=yes
 
       - name: JSON validity
         run: |
@@ -37,3 +39,6 @@ jobs:
 
       - name: Salt refill and device type in commands
         run: php tests/check-salt-refill.php
+
+      - name: WebClient response splitting
+        run: php tests/check-webclient-response.php

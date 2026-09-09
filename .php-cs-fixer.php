@@ -15,10 +15,12 @@ declare(strict_types=1);
  *    ausgerichtete Konstantenblöcke sind hier bewusst so geschrieben und besser lesbar.
  *  - cast_spaces, single_space_around_construct, function_declaration, method_argument_space
  *    — Geschmacksfragen ((string)$x → (string) $x, fn( → fn ().
- *  - declare_strict_types    — betrifft nur libs/WebClient.php und ist dort nicht bloß
- *    Formatierung: Unter strict_types würfe `substr($output, 0, $separatorpos)` in exec()
- *    einen TypeError, sobald `strpos` den Header-Trenner nicht findet und `false` liefert
- *    (heute wird daraus stillschweigend 0). Erst absichern, dann einschalten.
+ *
+ * `declare_strict_types` ist als „risky" eingestuft und wurde erst aufgenommen, nachdem
+ * WebClient::splitResponse() den fehlenden Header-Trenner abfängt — vorher hätte
+ * `substr($output, 0, false)` dort einen TypeError geworfen, mitten im Netzpfad jedes
+ * Gerätekommandos (Nachweis: tests/check-webclient-response.php). Deshalb läuft der Check
+ * mit `--allow-risky=yes`.
  *
  * Mit dieser Auswahl bleibt das Repo dauerhaft grün: der volle Symcon-Stil würde rund
  * 1.800 Zeilen umformatieren, diese Auswahl rund 250 — davon der größte Teil einmalig
@@ -39,6 +41,7 @@ return (new PhpCsFixer\Config())
         'array_syntax'                     => ['syntax' => 'short'],
         'blank_line_after_opening_tag'     => true,
         'constant_case'                    => ['case' => 'lower'],
+        'declare_strict_types'             => true,
         'line_ending'                      => true,
         'no_blank_lines_after_class_opening' => true,
         'no_extra_blank_lines'             => true,
