@@ -24,6 +24,7 @@ jobs:
           php -l tests/check-webclient-response.php
           php -l libs/WebClient.php
           php -l tests/check_locale.php
+          php -l tests/check-variable-registration.php
 
       - name: Code style (schlankes eigenes Regelwerk, siehe .php-cs-fixer.php)
         run: |
@@ -46,3 +47,6 @@ jobs:
 
       - name: Übersetzungen
         run: php tests/check_locale.php
+
+      - name: Variablen-Registrierung
+        run: php tests/check-variable-registration.php

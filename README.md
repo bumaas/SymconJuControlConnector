@@ -1,5 +1,7 @@
 # JuControlConnector
 
+[![Check](https://github.com/bumaas/SymconJuControlConnector/actions/workflows/check.yml/badge.svg)](https://github.com/bumaas/SymconJuControlConnector/actions/workflows/check.yml)
+
 Folgende Module beinhaltet das JuControlConnector Repository:
 
 - __JuControlDevice__ ([Dokumentation](JuControlDevice))  

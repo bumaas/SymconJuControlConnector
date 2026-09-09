@@ -157,13 +157,6 @@ class JuControlDevice extends IPSModule
             'JCD.Minutes.WSMaxPeriodOfUse',
             ++$position
         );
-
-        $this->RegisterVariableInteger(
-            self::VAR_IDENT_WATERSTOP_MAXPERIODOFUSE,
-            $this->Translate('Max. Period of Use'),
-            'JCD.Minutes.WSMaxPeriodOfUse',
-            ++$position
-        );
         $this->RegisterVariableInteger(
             self::VAR_IDENT_WATERSTOP_MAXQUANTITY,
             $this->Translate('Max. Quantity'),
