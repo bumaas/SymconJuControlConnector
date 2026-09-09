@@ -7,7 +7,6 @@ require_once __DIR__ . '/../libs/DebugHelper.php';
 
 class JuControlDevice extends IPSModule
 {
-
     //Status
     private const STATUS_INST_AUTHENTICATION_FAILED  = 201;
     private const STATUS_INST_WRONG_DEVICETYPE       = 202;
@@ -102,23 +101,22 @@ class JuControlDevice extends IPSModule
         parent::Create();
 
         //attributes
-        $this->RegisterAttributeString(self::ATTR_TOKEN_KNM, "noToken");
-        $this->RegisterAttributeString(self::ATTR_TOKEN_JUDO, "noToken");
+        $this->RegisterAttributeString(self::ATTR_TOKEN_KNM, 'noToken');
+        $this->RegisterAttributeString(self::ATTR_TOKEN_JUDO, 'noToken');
         $this->RegisterAttributeString(self::ATTR_DEVICEDATA, '');
         $this->RegisterAttributeString(self::ATTR_INCOMPLETE_SINCE, '');
         $this->RegisterAttributeString(self::ATTR_DEVICE_DT, '');
 
         //timer
-        $this->RegisterTimer("RefreshTimer", 0, 'JCD_RefreshData(' . $this->InstanceID . ');');
-        $this->RegisterTimer("SleepTimer", 0, 'JCD_Wakeup(' . $this->InstanceID . ');');
+        $this->RegisterTimer('RefreshTimer', 0, 'JCD_RefreshData(' . $this->InstanceID . ');');
+        $this->RegisterTimer('SleepTimer', 0, 'JCD_Wakeup(' . $this->InstanceID . ');');
 
         //properties
-        $this->RegisterPropertyString(self::PROP_USERNAME, "");
-        $this->RegisterPropertyString(self::PROP_PASSWORD, "");
-        $this->RegisterPropertyString(self::PROP_DEVICETYPE, "");
-        $this->RegisterPropertyString(self::PROP_SERIALNUMBER, "");
+        $this->RegisterPropertyString(self::PROP_USERNAME, '');
+        $this->RegisterPropertyString(self::PROP_PASSWORD, '');
+        $this->RegisterPropertyString(self::PROP_DEVICETYPE, '');
+        $this->RegisterPropertyString(self::PROP_SERIALNUMBER, '');
         $this->RegisterPropertyInteger(self::PROP_REFRESHRATE, 60);
-
 
         $this->SetStatus(IS_INACTIVE);
     }
@@ -128,17 +126,17 @@ class JuControlDevice extends IPSModule
         $position = -1;
 
         //common profiles
-        $this->RegisterProfileInteger("JCD.lph", "Drops", "", " l/h", 0, 0, 0);
-        $this->RegisterProfileInteger("JCD.dH_int", "Drops", "", " °dH", 0, 50, 1);
-        $this->RegisterProfileFloat("JCD.dH_float", "Drops", "", " °dH", 0, 50, 0.1);
-        $this->RegisterProfileInteger("JCD.Days", "Clock", "", $this->Translate(' days'), 0, 0, 0);
+        $this->RegisterProfileInteger('JCD.lph', 'Drops', '', ' l/h', 0, 0, 0);
+        $this->RegisterProfileInteger('JCD.dH_int', 'Drops', '', ' °dH', 0, 50, 1);
+        $this->RegisterProfileFloat('JCD.dH_float', 'Drops', '', ' °dH', 0, 50, 0.1);
+        $this->RegisterProfileInteger('JCD.Days', 'Clock', '', $this->Translate(' days'), 0, 0, 0);
         $this->RegisterProfileInteger('JCD.kg', '', '', ' kg', 0, self::SALT_CONTAINER_KG, 1);
-        $this->RegisterProfileInteger("JCD.Liter", "Wave", "", $this->Translate(' liters'), 0, 99999999, 1);
-        $this->RegisterProfileInteger("JCD.Hours", "Clock", "", $this->Translate(' hours'), 0, 10, 1); // Wasserszenen-Zeiten aller Gerätetypen
+        $this->RegisterProfileInteger('JCD.Liter', 'Wave', '', $this->Translate(' liters'), 0, 99999999, 1);
+        $this->RegisterProfileInteger('JCD.Hours', 'Clock', '', $this->Translate(' hours'), 0, 10, 1); // Wasserszenen-Zeiten aller Gerätetypen
         $this->RegisterProfileInteger('JCD.Minutes.WSMaxPeriodOfUse', 'Clock', '', $this->Translate(' minutes'), 0, 600, 10);
-        $this->RegisterProfileInteger('JCD.Waterscene', "Drops", "", "", 0, 4, 0);
-        $this->RegisterProfileInteger('JCD.Liters.WSMaxQuantity', '', '', " l", 0, 3000, 100);
-        $this->RegisterProfileInteger('JCD.lph.WSMaxWaterFlow', '', '', " l/h", 0, 5000, 100);
+        $this->RegisterProfileInteger('JCD.Waterscene', 'Drops', '', '', 0, 4, 0);
+        $this->RegisterProfileInteger('JCD.Liters.WSMaxQuantity', '', '', ' l', 0, 3000, 100);
+        $this->RegisterProfileInteger('JCD.lph.WSMaxWaterFlow', '', '', ' l/h', 0, 5000, 100);
         IPS_SetVariableProfileAssociation('JCD.Waterscene', 0, $this->Translate('Normal mode'), 'Ok', 0x00FF00);
         IPS_SetVariableProfileAssociation('JCD.Waterscene', 1, $this->Translate('Shower'), 'Shower', 0xFF9C00);
         IPS_SetVariableProfileAssociation('JCD.Waterscene', 2, $this->Translate('Filling of heating'), 'Temperature', 0xFF9C00);
@@ -146,9 +144,9 @@ class JuControlDevice extends IPSModule
         IPS_SetVariableProfileAssociation('JCD.Waterscene', 4, $this->Translate('Washing'), 'Pants', 0xFF9C00);
 
         //common variables
-        $this->RegisterVariableString(self::VAR_IDENT_DEVICESTATE, $this->Translate('State'), "", ++$position);
-        $this->RegisterVariableFloat(self::VAR_IDENT_INPUT_HARDNESS, $this->Translate('Input water hardness'), "JCD.dH_float", ++$position);
-        $this->RegisterVariableInteger(self::VAR_IDENT_TARGET_HARDNESS, $this->Translate('Desired water hardness'), "JCD.dH_int", ++$position);
+        $this->RegisterVariableString(self::VAR_IDENT_DEVICESTATE, $this->Translate('State'), '', ++$position);
+        $this->RegisterVariableFloat(self::VAR_IDENT_INPUT_HARDNESS, $this->Translate('Input water hardness'), 'JCD.dH_float', ++$position);
+        $this->RegisterVariableInteger(self::VAR_IDENT_TARGET_HARDNESS, $this->Translate('Desired water hardness'), 'JCD.dH_int', ++$position);
         $this->RegisterVariableInteger(self::VAR_IDENT_SALTLEVEL, $this->Translate('Salt storage'), 'JCD.kg', ++$position);
         $this->RegisterVariableInteger(self::VAR_IDENT_RANGESALTPERCENT, $this->Translate('Fill level salt'), '~Intensity.100', ++$position);
         $this->RegisterVariableInteger(self::VAR_IDENT_RANGESALTDAYS, $this->Translate('Range salt storage'), 'JCD.Days', ++$position);
@@ -224,15 +222,15 @@ class JuControlDevice extends IPSModule
             ++$position
         );
         $this->RegisterVariableInteger(self::VAR_IDENT_TIME_SHOWER, $this->Translate('Water scene time \'Shower\''), 'JCD.Hours', ++$position);
-        $this->RegisterVariableInteger(self::VAR_IDENT_INSTALLATION_DATE, $this->Translate('Installation Date'), "~UnixTimestampDate", ++$position);
-        $this->RegisterVariableInteger(self::VAR_IDENT_NEXT_SERVICE_DATE, $this->Translate('Next Service Date'), "~UnixTimestampDate", ++$position);
-        $this->RegisterVariableInteger(self::VAR_IDENT_TOTAL_WATER, $this->Translate('Total water quantity'), "JCD.Liter", ++$position);
-        $this->RegisterVariableInteger(self::VAR_IDENT_TOTAL_REGENERATION, $this->Translate('Total regeneration rate'), "", ++$position);
-        $this->RegisterVariableString(self::VAR_IDENT_DEVICE_TYPE, $this->Translate('Device type'), "", ++$position);
-        $this->RegisterVariableString(self::VAR_IDENT_DEVICE_SN, $this->Translate('Serial Number'), "", ++$position);
-        $this->RegisterVariableString(self::VAR_IDENT_SWVERSION, $this->Translate('Software version'), "", ++$position);
-        $this->RegisterVariableString(self::VAR_IDENT_HWVERSION, $this->Translate('Hardware version'), "", ++$position);
-        $this->RegisterVariableInteger(self::VAR_IDENT_ACTIVESCENE, $this->Translate('Active water scene'), "JCD.Waterscene", ++$position);
+        $this->RegisterVariableInteger(self::VAR_IDENT_INSTALLATION_DATE, $this->Translate('Installation Date'), '~UnixTimestampDate', ++$position);
+        $this->RegisterVariableInteger(self::VAR_IDENT_NEXT_SERVICE_DATE, $this->Translate('Next Service Date'), '~UnixTimestampDate', ++$position);
+        $this->RegisterVariableInteger(self::VAR_IDENT_TOTAL_WATER, $this->Translate('Total water quantity'), 'JCD.Liter', ++$position);
+        $this->RegisterVariableInteger(self::VAR_IDENT_TOTAL_REGENERATION, $this->Translate('Total regeneration rate'), '', ++$position);
+        $this->RegisterVariableString(self::VAR_IDENT_DEVICE_TYPE, $this->Translate('Device type'), '', ++$position);
+        $this->RegisterVariableString(self::VAR_IDENT_DEVICE_SN, $this->Translate('Serial Number'), '', ++$position);
+        $this->RegisterVariableString(self::VAR_IDENT_SWVERSION, $this->Translate('Software version'), '', ++$position);
+        $this->RegisterVariableString(self::VAR_IDENT_HWVERSION, $this->Translate('Hardware version'), '', ++$position);
+        $this->RegisterVariableInteger(self::VAR_IDENT_ACTIVESCENE, $this->Translate('Active water scene'), 'JCD.Waterscene', ++$position);
 
         $this->EnableAction(self::VAR_IDENT_WATERSTOP);
         $this->EnableAction(self::VAR_IDENT_WATERSTOP_MAXWATERFLOW);
@@ -249,10 +247,9 @@ class JuControlDevice extends IPSModule
         $this->EnableAction(self::VAR_IDENT_TIME_SHOWER);
         //$this->EnableAction(self::VAR_IDENT_ACTIVESCENE); funktioniert scheinbar über das Webfront nicht richtig.z.B. wird bei Garten immer gleich wieder auf normal zurückgeschaltet
 
-
         if (in_array($deviceType, [self::DT_I_SOFT_SAFE_PLUS, self::DT_I_SOFT_K_SAFE_PLUS], true)) {
             //i-soft safe profiles
-            $this->RegisterProfileInteger("JCD.Minutes", "Clock", "", $this->Translate(' minutes'), 0, 0, 0);
+            $this->RegisterProfileInteger('JCD.Minutes', 'Clock', '', $this->Translate(' minutes'), 0, 0, 0);
             $this->RegisterProfileInteger('JCD.WSHolidayMode', '', '', '', 0, 3, 0);
             IPS_SetVariableProfileAssociation('JCD.WSHolidayMode', 0, $this->Translate('no holiday mode'), '', -1);
             IPS_SetVariableProfileAssociation('JCD.WSHolidayMode', 1, $this->Translate('Holiday mode 1'), '', -1);
@@ -264,7 +261,7 @@ class JuControlDevice extends IPSModule
             ]);
 
             //i-soft safe variables
-            $this->RegisterVariableString("deviceID", $this->Translate('Device number'), "", ++$position);
+            $this->RegisterVariableString('deviceID', $this->Translate('Device number'), '', ++$position);
 
             $this->RegisterVariableInteger(self::VAR_IDENT_WATERSTOP_HOLIDAYMODE, $this->Translate('Holiday mode'), 'JCD.WSHolidayMode', ++$position);
             $this->EnableAction(self::VAR_IDENT_WATERSTOP_HOLIDAYMODE);
@@ -286,16 +283,16 @@ class JuControlDevice extends IPSModule
             $this->RegisterVariableInteger(self::VAR_IDENT_BATTERYSTATE, $this->Translate('Battery status'), '~Intensity.100', ++$position);
             $this->RegisterVariableString(self::VAR_IDENT_BATTERYRUNTIME, $this->Translate('Batterielaufzeit (H:MM:SS)'), '', ++$position);
 
-            $this->RegisterVariableString("ccuVersion", $this->Translate('Connectivity module version'), "", ++$position);
-            $this->RegisterVariableInteger(self::VAR_IDENT_NEXT_SERVICE, $this->Translate('Next service'), "JCD.Days", ++$position);
-            $this->RegisterVariableBoolean("hasEmergencySupply", $this->Translate('Safety-Modul'), "JCD.NoYes", ++$position);
+            $this->RegisterVariableString('ccuVersion', $this->Translate('Connectivity module version'), '', ++$position);
+            $this->RegisterVariableInteger(self::VAR_IDENT_NEXT_SERVICE, $this->Translate('Next service'), 'JCD.Days', ++$position);
+            $this->RegisterVariableBoolean('hasEmergencySupply', $this->Translate('Safety-Modul'), 'JCD.NoYes', ++$position);
 
             $this->EnableAction(self::VAR_IDENT_REGENERATION);
             $this->EnableAction(self::VAR_IDENT_SALTLEVEL); // Salzvorrat nach dem Nachfüllen setzen
 
-            $this->RegisterVariableInteger("totalService", $this->Translate('Number of services'), "", ++$position);
+            $this->RegisterVariableInteger('totalService', $this->Translate('Number of services'), '', ++$position);
 
-            $this->RegisterVariableInteger("remainingTime", $this->Translate('Remaining time scene'), "JCD.Minutes", ++$position);
+            $this->RegisterVariableInteger('remainingTime', $this->Translate('Remaining time scene'), 'JCD.Minutes', ++$position);
 
             $this->EnableAction(self::VAR_IDENT_ACTIVESCENE); // the setting only works with i-soft SAFE+
 
@@ -505,7 +502,7 @@ class JuControlDevice extends IPSModule
         } catch (JsonException) {
             return false; // z. B. leere Antwort auf eine falsche Gerätekennung
         }
-        return (isset($json['status']) && ($json['status'] === 'ok'));
+        return isset($json['status']) && ($json['status'] === 'ok');
     }
 
     /* wird aufgerufen, wenn eine Variable geändert wird */
@@ -539,55 +536,55 @@ class JuControlDevice extends IPSModule
 
         switch ($Ident) {
             case self::VAR_IDENT_HARDNESS_WASHING:
-                $command   = "set%20waterscene%20washing";
+                $command   = 'set%20waterscene%20washing';
                 $parameter = (string)$Value;
                 break;
             case self::VAR_IDENT_HARDNESS_HEATER:
-                $command   = "set%20waterscene%20heaterfilling";
+                $command   = 'set%20waterscene%20heaterfilling';
                 $parameter = (string)$Value;
                 break;
             case self::VAR_IDENT_HARDNESS_WATERING:
-                $command   = "set%20waterscene%20watering";
+                $command   = 'set%20waterscene%20watering';
                 $parameter = (string)$Value;
                 break;
             case self::VAR_IDENT_HARDNESS_SHOWER:
-                $command   = "set%20waterscene%20shower";
+                $command   = 'set%20waterscene%20shower';
                 $parameter = (string)$Value;
                 break;
             case self::VAR_IDENT_TIME_WASHING:
-                $command         = "set_waterscene_time_washing";
+                $command         = 'set_waterscene_time_washing';
                 $parameter       = (string)$Value;
                 $strSerialnumber = '&serial_number=';
                 break;
             case self::VAR_IDENT_TIME_HEATER:
-                $command         = "set_waterscene_time_heater";
+                $command         = 'set_waterscene_time_heater';
                 $parameter       = (string)$Value;
                 $strSerialnumber = '&serial_number=';
                 break;
             case self::VAR_IDENT_TIME_WATERING:
-                $command         = "set_waterscene_time_garden";
+                $command         = 'set_waterscene_time_garden';
                 $parameter       = (string)$Value;
                 $strSerialnumber = '&serial_number=';
                 break;
             case self::VAR_IDENT_TIME_SHOWER:
-                $command         = "set_waterscene_time";
+                $command         = 'set_waterscene_time';
                 $parameter       = (string)$Value;
                 $strSerialnumber = '&serial_number=';
                 break;
             case self::VAR_IDENT_HARDNESS_NORMAL:
-                $command         = "write%20data&dt=$dt&index=60&data=" . $Value . "&da=0x1&action=normal";
+                $command         = "write%20data&dt=$dt&index=60&data=" . $Value . '&da=0x1&action=normal';
                 $strSerialnumber = '&serial_number=';
                 break;
             case self::VAR_IDENT_WATERSTOP_MAXPERIODOFUSE:
-                $command         = "write%20data&dt=$dt&index=74&data=" . substr($this->formatEndian($Value), 0, 4) . "&da=0x1";
+                $command         = "write%20data&dt=$dt&index=74&data=" . substr($this->formatEndian($Value), 0, 4) . '&da=0x1';
                 $strSerialnumber = '&serial_number=';
                 break;
             case self::VAR_IDENT_WATERSTOP_MAXQUANTITY:
-                $command         = "write%20data&dt=$dt&index=76&data=" . substr($this->formatEndian($Value), 0, 4) . "&da=0x1";
+                $command         = "write%20data&dt=$dt&index=76&data=" . substr($this->formatEndian($Value), 0, 4) . '&da=0x1';
                 $strSerialnumber = '&serial_number=';
                 break;
             case self::VAR_IDENT_WATERSTOP_MAXWATERFLOW:
-                $command         = "write%20data&dt=$dt&index=75&data=" . substr($this->formatEndian($Value), 0, 4) . "&da=0x1";
+                $command         = "write%20data&dt=$dt&index=75&data=" . substr($this->formatEndian($Value), 0, 4) . '&da=0x1';
                 $strSerialnumber = '&serial_number=';
                 break;
             case self::VAR_IDENT_WATERSTOP_HOLIDAYMODE:
@@ -620,12 +617,12 @@ class JuControlDevice extends IPSModule
                         $wsUrlaub[4] = '0';
                 }
 
-                $command         = "write%20data&dt=$dt&index=77&data=" . str_pad(dechex(bindec($wsUrlaub)), 2, '0', STR_PAD_LEFT) . "&da=0x1";
+                $command         = "write%20data&dt=$dt&index=77&data=" . str_pad(dechex(bindec($wsUrlaub)), 2, '0', STR_PAD_LEFT) . '&da=0x1';
                 $strSerialnumber = '&serial_number=';
                 break;
 
             case self::VAR_IDENT_WATERSTOP_SLEEPMODEDURATION:
-                $command         = "write%20data&dt=$dt&index=171&data=" . $Value . "&da=0x1";
+                $command         = "write%20data&dt=$dt&index=171&data=" . $Value . '&da=0x1';
                 $strSerialnumber = '&serial_number=';
                 break;
 
@@ -667,40 +664,40 @@ class JuControlDevice extends IPSModule
             case self::VAR_IDENT_ACTIVESCENE:
                 switch ($Value) {
                     case 0:
-                        $action   = "normal";
+                        $action   = 'normal';
                         $hardness = $this->GetValue(self::VAR_IDENT_HARDNESS_NORMAL);
-                        $command  = "write%20data&dt=$dt&index=201&data=" . $hardness . "&da=0x1&disable_time=" . "&action=" . $action;
+                        $command  = "write%20data&dt=$dt&index=201&data=" . $hardness . '&da=0x1&disable_time=' . '&action=' . $action;
                         break;
                     case 1:
-                        $action   = "shower";
+                        $action   = 'shower';
                         $time     = $this->GetValue(self::VAR_IDENT_TIME_SHOWER);
                         $hardness = $this->GetValue(self::VAR_IDENT_HARDNESS_SHOWER);
                         $command  =
-                            "write%20data&dt=$dt&index=202&data=" . $hardness . "&da=0x1&disable_time=" . (time() + $time * 60 * 60) . "&action="
+                            "write%20data&dt=$dt&index=202&data=" . $hardness . '&da=0x1&disable_time=' . (time() + $time * 60 * 60) . '&action='
                             . $action;
                         break;
                     case 2:
-                        $action   = "heaterfilling";
+                        $action   = 'heaterfilling';
                         $time     = $this->GetValue(self::VAR_IDENT_TIME_HEATER);
                         $hardness = $this->GetValue(self::VAR_IDENT_HARDNESS_HEATER);
                         $command  =
-                            "write%20data&dt=$dt&index=204&data=" . $hardness . "&da=0x1&disable_time=" . (time() + $time * 60 * 60) . "&action="
+                            "write%20data&dt=$dt&index=204&data=" . $hardness . '&da=0x1&disable_time=' . (time() + $time * 60 * 60) . '&action='
                             . $action;
                         break;
                     case 3:
-                        $action   = "watering";
+                        $action   = 'watering';
                         $time     = $this->GetValue(self::VAR_IDENT_TIME_WATERING);
                         $hardness = $this->GetValue(self::VAR_IDENT_HARDNESS_WATERING);
                         $command  =
-                            "write%20data&dt=$dt&index=203&data=" . $hardness . "&da=0x1&disable_time=" . (time() + $time * 60 * 60) . "&action="
+                            "write%20data&dt=$dt&index=203&data=" . $hardness . '&da=0x1&disable_time=' . (time() + $time * 60 * 60) . '&action='
                             . $action;
                         break;
                     case 4:
-                        $action   = "washing";
+                        $action   = 'washing';
                         $time     = $this->GetValue(self::VAR_IDENT_TIME_WASHING);
                         $hardness = $this->GetValue(self::VAR_IDENT_HARDNESS_WASHING);
                         $command  =
-                            "write%20data&dt=$dt&index=205&data=" . $hardness . "&da=0x1&disable_time=" . (time() + $time * 60 * 60) . "&action="
+                            "write%20data&dt=$dt&index=205&data=" . $hardness . '&da=0x1&disable_time=' . (time() + $time * 60 * 60) . '&action='
                             . $action;
                         break;
                     default:
@@ -721,7 +718,7 @@ class JuControlDevice extends IPSModule
                     return;
                 }
                 $Value           = (int)$Value; // Kommando und SetValue müssen denselben Wert tragen
-                $command         = "write%20data&dt=$dt&index=86&data=" . substr($this->formatEndian($Value * 1000), 0, 4) . "&da=0x1";
+                $command         = "write%20data&dt=$dt&index=86&data=" . substr($this->formatEndian($Value * 1000), 0, 4) . '&da=0x1';
                 $strSerialnumber = '&serial_number=';
                 break;
 
@@ -918,14 +915,14 @@ class JuControlDevice extends IPSModule
         $this->trackIncompleteData($degraded, (string)($deviceData['lu'] ?? ''));
 
         /* Device S/N */
-        $this->updateIfNecessary($device['serialnumber'], "deviceSN");
+        $this->updateIfNecessary($device['serialnumber'], 'deviceSN');
 
         /* installation date */
         $this->updateIfNecessary(strtotime($device['installation_date']), self::VAR_IDENT_INSTALLATION_DATE);
 
         /* Connectivity module version */
         if (isset($device['data'][0]['sv'])) {
-            $this->updateIfNecessary($device['data'][0]['sv'], "ccuVersion");
+            $this->updateIfNecessary($device['data'][0]['sv'], 'ccuVersion');
         }
 
         if ($degraded === []) {
@@ -936,7 +933,7 @@ class JuControlDevice extends IPSModule
             /* Emergency supply available */
             $emergencyModuleData      = $this->getInValue($deviceData, 790, 2);
             $emergencySupplyAvailable = (strlen($emergencyModuleData) > 1) && (bool)$emergencyModuleData[strlen($emergencyModuleData) - 2];
-            $this->updateIfNecessary($emergencySupplyAvailable, "hasEmergencySupply");
+            $this->updateIfNecessary($emergencySupplyAvailable, 'hasEmergencySupply');
 
             if ($emergencySupplyAvailable && $this->isBlockUsable($deviceData, 93)) {
                 $batteryValues = explode(':', $this->getInValue($deviceData, 93));
@@ -983,7 +980,7 @@ class JuControlDevice extends IPSModule
 
         /* Device ID */
         if ($this->isBlockUsable($deviceData, 3)) {
-            $this->updateIfNecessary($this->getInValue($deviceData, 3), "deviceID");
+            $this->updateIfNecessary($this->getInValue($deviceData, 3), 'deviceID');
         }
 
         /* Service Info */
@@ -995,7 +992,7 @@ class JuControlDevice extends IPSModule
                 $this->updateIfNecessary(strtotime("midnight + $nextService days"), self::VAR_IDENT_NEXT_SERVICE_DATE);
             }
             if (isset($infoService[1])) {
-                $this->updateIfNecessary((int)$infoService[1], "totalService");
+                $this->updateIfNecessary((int)$infoService[1], 'totalService');
             }
         }
 
@@ -1087,7 +1084,7 @@ class JuControlDevice extends IPSModule
         if ($this->GetValue(self::VAR_IDENT_ACTIVESCENE) !== 0) {
             if (($device['disable_time'] ?? '') !== '') {
                 $remainingTime = (((int)$device['disable_time'] - time()) / 60) + 1;
-                $this->updateIfNecessary(max((int)$remainingTime, 0), "remainingTime");
+                $this->updateIfNecessary(max((int)$remainingTime, 0), 'remainingTime');
                 /* update target hardness due to active waterscene */
                 switch ($this->GetValue(self::VAR_IDENT_ACTIVESCENE)) {
                     case '1':
@@ -1108,11 +1105,11 @@ class JuControlDevice extends IPSModule
                         break;
                 }
             } else {
-                $this->updateIfNecessary(0, "remainingTime");
+                $this->updateIfNecessary(0, 'remainingTime');
                 $this->updateIfNecessary(0, self::VAR_IDENT_ACTIVESCENE);
             }
         } else {
-            $this->updateIfNecessary(0, "remainingTime");
+            $this->updateIfNecessary(0, 'remainingTime');
         }
 
         return $degraded === [];
@@ -1128,7 +1125,6 @@ class JuControlDevice extends IPSModule
                     return false;
                 }
             }
-
 
             $response = $this->SendCommand(self::SERVER_KNM, [
                 'group'   => 'register',
@@ -1170,7 +1166,6 @@ class JuControlDevice extends IPSModule
                     $this->SetStatus(self::STATUS_INST_DEVICE_NOT_ONLINE);
                     return false;
                 }
-
 
                 /* read target hardness of waterscenes */
                 $this->updateIfNecessary((int)$device['hardness_washing'], self::VAR_IDENT_HARDNESS_WASHING);
@@ -1228,7 +1223,7 @@ class JuControlDevice extends IPSModule
                             $this->SetStatus(self::STATUS_INST_WRONG_DEVICETYPE);
                             $this->SendDebug(__FUNCTION__, 'Wrong device type (' . $dt . ') found -> Aborting!', 0);
                             $this->LogMessage('Wrong device type (' . $dt . ') found -> Aborting!', KL_ERROR);
-                            $this->SetTimerInterval("RefreshTimer", 0);
+                            $this->SetTimerInterval('RefreshTimer', 0);
                             return false;
                         }
 
@@ -1269,9 +1264,9 @@ class JuControlDevice extends IPSModule
                         $responseMyJudoCom_combinedData = $this->SendCommand(
                             self::SERVER_JUDO,
                             [
-                                                 'group'   => 'device',
-                                                 'command' => 'combined data'
-                                             ]
+                                'group'   => 'device',
+                                'command' => 'combined data'
+                            ]
                         );
 
                         if ($responseMyJudoCom_combinedData === false) {
@@ -1291,7 +1286,7 @@ class JuControlDevice extends IPSModule
                             $this->SetStatus(self::STATUS_INST_WRONG_DEVICETYPE);
                             $this->SendDebug(__FUNCTION__, 'Wrong device type (' . $device['wtuType'] . ') found -> Aborting!', 0);
                             $this->LogMessage('Wrong device type (' . $device['wtuType'] . ') found -> Aborting!', KL_ERROR);
-                            $this->SetTimerInterval("RefreshTimer", 0);
+                            $this->SetTimerInterval('RefreshTimer', 0);
                             return false;
                         }
 
@@ -1300,10 +1295,10 @@ class JuControlDevice extends IPSModule
                         $response_waterscene = $this->SendCommand(
                             self::SERVER_KNM,
                             [
-                                                'group'        => 'register',
-                                                'command'      => 'get_optisoft_waterscene',
-                                                'serialnumber' => $serialnumber
-                                            ]
+                                'group'        => 'register',
+                                'command'      => 'get_optisoft_waterscene',
+                                'serialnumber' => $serialnumber
+                            ]
                         );
 
                         if ($response_waterscene === false) {
@@ -1332,7 +1327,6 @@ class JuControlDevice extends IPSModule
                         }
                         $this->updateIfNecessary($sceneValue, self::VAR_IDENT_ACTIVESCENE);
 
-
                         break;
                 }
             } else {
@@ -1357,14 +1351,14 @@ class JuControlDevice extends IPSModule
         $responseMyJudoEU = $this->SendCommand(
             self::SERVER_KNM,
             [
-                                'group'    => 'register',
-                                'command'  => 'login',
-                                'name'     => 'login',
-                                'user'     => $username,
-                                'password' => md5($passwd),
-                                'nohash'   => $passwd,
-                                'role'     => 'customer'
-                            ]
+                'group'    => 'register',
+                'command'  => 'login',
+                'name'     => 'login',
+                'user'     => $username,
+                'password' => md5($passwd),
+                'nohash'   => $passwd,
+                'role'     => 'customer'
+            ]
         );
 
         // Anmeldung am Server Judo nur für i-soft plus
@@ -1373,13 +1367,13 @@ class JuControlDevice extends IPSModule
             $responseMyJudoCom = $this->SendCommand(
                 self::SERVER_JUDO,
                 [
-                                     'group'    => 'register',
-                                     'command'  => 'login',
-                                     'name'     => 'login',
-                                     'user'     => $username,
-                                     'password' => $passwd,
-                                     'role'     => 'customer'
-                                 ]
+                    'group'    => 'register',
+                    'command'  => 'login',
+                    'name'     => 'login',
+                    'user'     => $username,
+                    'password' => $passwd,
+                    'role'     => 'customer'
+                ]
             );
         }
 
@@ -1420,13 +1414,13 @@ class JuControlDevice extends IPSModule
             );
 
             $this->SetStatus(IS_ACTIVE);
-            $refreshRate = $this->ReadPropertyInteger("RefreshRate");
-            $this->SetTimerInterval("RefreshTimer", $refreshRate * 1000);
+            $refreshRate = $this->ReadPropertyInteger('RefreshRate');
+            $this->SetTimerInterval('RefreshTimer', $refreshRate * 1000);
         } else {
             $this->SendDebug(__FUNCTION__, 'Login failed!', 0);
             $this->LogMessage('Login failed!', KL_ERROR);
             $this->SetStatus(self::STATUS_INST_AUTHENTICATION_FAILED);
-            $this->SetTimerInterval("RefreshTimer", 0);
+            $this->SetTimerInterval('RefreshTimer', 0);
             return false;
         }
 
@@ -1466,23 +1460,22 @@ class JuControlDevice extends IPSModule
     private function Sleep(int $time): void
     {
         $this->SendDebug(__FUNCTION__, 'Sleep requested for ' . $time . ' ms', 0);
-        $this->SetTimerInterval("SleepTimer", $time);
-        $this->SetTimerInterval("RefreshTimer", 0);
+        $this->SetTimerInterval('SleepTimer', $time);
+        $this->SetTimerInterval('RefreshTimer', 0);
     }
 
     public function Wakeup(): void
     {
         $this->SendDebug(__FUNCTION__, 'Resuming regular activity.', 0);
-        $this->SetTimerInterval("SleepTimer", 0);
-        $refreshRate = $this->ReadPropertyInteger("RefreshRate");
-        $this->SetTimerInterval("RefreshTimer", $refreshRate * 1000);
+        $this->SetTimerInterval('SleepTimer', 0);
+        $refreshRate = $this->ReadPropertyInteger('RefreshRate');
+        $this->SetTimerInterval('RefreshTimer', $refreshRate * 1000);
     }
 
     public function TestConnection(): bool
     {
         return $this->Login();
     }
-
 
     /**
      * Ist das Datenfeld des Blocks in der erwarteten Form vorhanden (st=OK, erwartete Länge,
@@ -1637,7 +1630,6 @@ class JuControlDevice extends IPSModule
                             }
                             break;
 
-
                         case 8:
                         case 10:
                         case 26:
@@ -1663,7 +1655,7 @@ class JuControlDevice extends IPSModule
                                 $value         = intval($tREGANZAHL_HI . $tREGANZAHL_LO, 16);
                                 break;
 
-                            // Statusflag Betrieb/Regeneration
+                                // Statusflag Betrieb/Regeneration
                             case 0:
                                 $flag       = intval(substr($data, $subIndex * 2, 2), 16);
                                 $flagBinary = decbin($flag);
@@ -1686,7 +1678,6 @@ class JuControlDevice extends IPSModule
                                 $standbyBinary = decbin($standby);
                                 $value         = $standbyBinary;
                                 break;
-
 
                             case 9:
                             case 18:
@@ -1749,7 +1740,7 @@ class JuControlDevice extends IPSModule
         } else {
             $profile = IPS_GetVariableProfile($Name);
             if ($profile['ProfileType'] !== VARIABLETYPE_INTEGER) {
-                throw new Exception("Variable profile type does not match for profile " . $Name);
+                throw new Exception('Variable profile type does not match for profile ' . $Name);
             }
         }
         IPS_SetVariableProfileIcon($Name, $Icon);
@@ -1762,7 +1753,7 @@ class JuControlDevice extends IPSModule
         if (!IPS_VariableProfileExists($Name)) {
             IPS_CreateVariableProfile($Name, VARIABLETYPE_FLOAT);
         } elseif (IPS_GetVariableProfile($Name)['ProfileType'] !== VARIABLETYPE_FLOAT) {
-            throw new Exception("Variable profile type does not match for profile " . $Name);
+            throw new Exception('Variable profile type does not match for profile ' . $Name);
         }
         IPS_SetVariableProfileIcon($Name, $Icon);
         IPS_SetVariableProfileText($Name, $Prefix, $Suffix);
@@ -1787,7 +1778,6 @@ class JuControlDevice extends IPSModule
             IPS_SetVariableProfileAssociation($Name, (float)$Association[0], $Association[1], $Association[2], $Association[3]);
         }
     }
-
 
     private function updateIfNecessary(int|float|string|bool $newValue, string $ident): void
     {

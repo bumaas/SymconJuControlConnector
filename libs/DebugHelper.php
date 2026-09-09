@@ -1,4 +1,5 @@
 <?php
+
 /* Copyright (C) 2021 wolbolar */
 declare(strict_types=1);
 /**

@@ -22,9 +22,14 @@ jobs:
           php -l tests/check-incomplete-devicedata.php
           php -l tests/check-salt-refill.php
 
+      - name: Code style (schlankes eigenes Regelwerk, siehe .php-cs-fixer.php)
+        run: |
+          wget -q https://cs.symfony.com/download/php-cs-fixer-v3.phar
+          PHP_CS_FIXER_IGNORE_ENV=1 php php-cs-fixer-v3.phar fix --dry-run --diff --using-cache=no
+
       - name: JSON validity
         run: |
-          find . -name '*.json' -not -path './.style/*' -not -path './.git/*' -not -path './tests/stubs/*' -print0 |
+          find . -name '*.json' -not -path './.git/*' -not -path './tests/stubs/*' -print0 |
             xargs -0 -n1 php -r 'json_decode(file_get_contents($argv[1]), false, 512, JSON_THROW_ON_ERROR); echo $argv[1], " ok\n";' --
 
       - name: Incomplete device data regression test

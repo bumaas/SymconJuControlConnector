@@ -5,7 +5,7 @@ class WebClient
     private $ch;
     private $cookie = '';
 
-    public function Navigate($url, $post = array()) 
+    public function Navigate($url, $post = array())
     {
         curl_setopt($this->ch, CURLOPT_URL, $url);
         curl_setopt($this->ch, CURLOPT_COOKIE, $this->cookie);
@@ -21,7 +21,6 @@ class WebClient
         return $response['Html'];
     }
 
-
     public function __construct()
     {
         $this->init();
@@ -35,7 +34,7 @@ class WebClient
     private function init(): void
     {
         $this->ch = curl_init();
-        curl_setopt($this->ch, CURLOPT_USERAGENT, "Mozilla/6.0 (Windows NT 6.2; WOW64; rv:16.0.1) Gecko/20121011 Firefox/16.0.1");
+        curl_setopt($this->ch, CURLOPT_USERAGENT, 'Mozilla/6.0 (Windows NT 6.2; WOW64; rv:16.0.1) Gecko/20121011 Firefox/16.0.1');
         curl_setopt($this->ch, CURLOPT_FOLLOWLOCATION, TRUE);
         curl_setopt($this->ch, CURLOPT_MAXREDIRS, 5);
         curl_setopt($this->ch, CURLINFO_HEADER_OUT, TRUE);
