@@ -26,6 +26,21 @@ declare(strict_types=1);
  * 1.800 Zeilen umformatieren, diese Auswahl rund 250 — davon der größte Teil einmalig
  * Zeilenenden. Siehe Punkt 7 der Referenz-Checkliste (keine Massen-Umformatierung).
  *
+ * Fünf Regeln stehen hier als reine Wächter — sie ändern heute nichts (gemessen 09.09.2026:
+ * 0 von 7 Dateien) und fangen künftig echte Fehlerklassen ab, nicht Kosmetik:
+ *
+ *  - encoding            UTF-8 ohne BOM. Ein BOM in einer Moduldatei hat schon einmal eine
+ *                        ganze Bibliothek lahmgelegt (MarstekShellyEmulator unter Rust).
+ *  - no_closing_tag      kein `?>` am Dateiende — sonst wandern Leerzeichen dahinter in die
+ *                        Ausgabe und zerstören JSON-Antworten.
+ *  - logical_operators   `and`/`or` → `&&`/`||`; die alten Formen binden schwächer als `=`
+ *                        und führen zu still falschen Bedingungen.
+ *  - no_alias_functions  echte Funktionsnamen statt `sizeof`, `join`, `is_writeable` —
+ *                        einige Aliase sind abgekündigt.
+ *  - no_break_comment    ein durchfallendes `case` braucht ein ausdrückliches `// no break`;
+ *                        in den großen switch-Blöcken von RequestAction der wahrscheinlichste
+ *                        Flüchtigkeitsfehler.
+ *
  * Aufruf: php php-cs-fixer.phar fix --dry-run --diff   (ohne --dry-run wird korrigiert)
  */
 
@@ -42,7 +57,12 @@ return (new PhpCsFixer\Config())
         'blank_line_after_opening_tag'     => true,
         'constant_case'                    => ['case' => 'lower'],
         'declare_strict_types'             => true,
+        'encoding'                         => true,
         'line_ending'                      => true,
+        'logical_operators'                => true,
+        'no_alias_functions'               => true,
+        'no_break_comment'                 => true,
+        'no_closing_tag'                   => true,
         'no_blank_lines_after_class_opening' => true,
         'no_extra_blank_lines'             => true,
         'no_trailing_whitespace'           => true,
