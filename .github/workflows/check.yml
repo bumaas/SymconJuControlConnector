@@ -23,6 +23,7 @@ jobs:
           php -l tests/check-salt-refill.php
           php -l tests/check-webclient-response.php
           php -l libs/WebClient.php
+          php -l tests/check_locale.php
 
       - name: Code style (schlankes eigenes Regelwerk, siehe .php-cs-fixer.php)
         run: |
@@ -42,3 +43,6 @@ jobs:
 
       - name: WebClient response splitting
         run: php tests/check-webclient-response.php
+
+      - name: Übersetzungen
+        run: php tests/check_locale.php

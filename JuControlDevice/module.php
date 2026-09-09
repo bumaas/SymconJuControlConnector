@@ -281,7 +281,7 @@ class JuControlDevice extends IPSModule
             $this->EnableAction(self::VAR_IDENT_WATERSTOP_SLEEPMODEDURATION);
 
             $this->RegisterVariableInteger(self::VAR_IDENT_BATTERYSTATE, $this->Translate('Battery status'), '~Intensity.100', ++$position);
-            $this->RegisterVariableString(self::VAR_IDENT_BATTERYRUNTIME, $this->Translate('Batterielaufzeit (H:MM:SS)'), '', ++$position);
+            $this->RegisterVariableString(self::VAR_IDENT_BATTERYRUNTIME, $this->Translate('Battery runtime (H:MM:SS)'), '', ++$position);
 
             $this->RegisterVariableString('ccuVersion', $this->Translate('Connectivity module version'), '', ++$position);
             $this->RegisterVariableInteger(self::VAR_IDENT_NEXT_SERVICE, $this->Translate('Next service'), 'JCD.Days', ++$position);
