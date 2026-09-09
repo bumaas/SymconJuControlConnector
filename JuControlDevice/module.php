@@ -709,16 +709,22 @@ class JuControlDevice extends IPSModule
 
             case self::VAR_IDENT_SALTLEVEL:
                 // Die Cloud kennt kein Nachfüllen, nur das Setzen des absoluten Salzgewichts:
-                // Kommando 0x56 der JUDO-Kommandoliste, Gramm als 2 Byte little-endian.
-                // index ist die Dezimaldarstellung des Kommandobytes (0x3C = 60 Wunschhärte,
-                // 0x41 = 65 Regeneration, 0x48/0x49 = 72/73 Ventil, 0x4A–0x4C = 74–76 Grenzwerte),
-                // nicht die Blocknummer der Leseseite — die zählt getrennt (Salz liegt dort in Block 94).
+                // index 94 wie beim Lesen, Gramm als 2 Byte little-endian.
+                //
+                // Die 94 nicht auf 86 „korrigieren". Sie sieht falsch aus, weil die übrigen
+                // Kommandos die Dezimaldarstellung des JUDO-Kommandobytes tragen (0x3C = 60
+                // Wunschhärte, 0x41 = 65 Regeneration, 0x48/0x49 = 72/73 Ventil, 0x4A–0x4C =
+                // 74–76 Grenzwerte) und der Salzvorrat dort Kommando 0x56 = 86 wäre. Für diesen
+                // Datenpunkt gilt das aber nicht — am Gerät gemessen (SAFE+ #58649, 08.09.2026):
+                // mit index 94 hat die Anlage 25 kg, 1 kg und 0 kg übernommen und über
+                // rangeSaltPercent (50/2/0) zurückgemeldet; mit index 86 blieb der Wert stehen
+                // und die Variable fiel beim nächsten RefreshData wieder auf den alten Stand.
                 if ($Value < 0 || $Value > self::SALT_CONTAINER_KG) {
                     $this->LogMessage(sprintf('Salt storage not set: %s kg is outside 0-%d kg', $Value, self::SALT_CONTAINER_KG), KL_WARNING);
                     return;
                 }
                 $Value           = (int)$Value; // Kommando und SetValue müssen denselben Wert tragen
-                $command         = "write%20data&dt=$dt&index=86&data=" . substr($this->formatEndian($Value * 1000), 0, 4) . '&da=0x1';
+                $command         = "write%20data&dt=$dt&index=94&data=" . substr($this->formatEndian($Value * 1000), 0, 4) . '&da=0x1';
                 $strSerialnumber = '&serial_number=';
                 break;
 
