@@ -58,17 +58,16 @@ class WebClient
      */
     public static function splitResponse(string $output): array
     {
-        $separator    = '
-
-';
+        // Als Escape-Sequenz schreiben, nicht als echte Zeilenumbrüche: Sonst entfernt die
+        // Regel line_ending (und Gits text=auto) das CR, und der Trenner wäre nur "\n\n".
+        $separator    = "\r\n\r\n";
         $separatorpos = strpos($output, $separator);
         if ($separatorpos === false) {
             return ['headers' => [], 'html' => $output];
         }
 
         $headers = [];
-        foreach (explode('
-', trim(substr($output, 0, $separatorpos))) as $line) {
+        foreach (explode("\n", trim(substr($output, 0, $separatorpos))) as $line) {
             $kv = explode(':', $line);
             if (count($kv) === 2) {
                 $headers[trim($kv[0])] = trim($kv[1]);
