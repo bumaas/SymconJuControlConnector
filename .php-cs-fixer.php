@@ -15,6 +15,10 @@ declare(strict_types=1);
  *    ausgerichtete Konstantenblöcke sind hier bewusst so geschrieben und besser lesbar.
  *  - cast_spaces, single_space_around_construct, function_declaration, method_argument_space
  *    — Geschmacksfragen ((string)$x → (string) $x, fn( → fn ().
+ *  - declare_strict_types    — betrifft nur libs/WebClient.php und ist dort nicht bloß
+ *    Formatierung: Unter strict_types würfe `substr($output, 0, $separatorpos)` in exec()
+ *    einen TypeError, sobald `strpos` den Header-Trenner nicht findet und `false` liefert
+ *    (heute wird daraus stillschweigend 0). Erst absichern, dann einschalten.
  *
  * Mit dieser Auswahl bleibt das Repo dauerhaft grün: der volle Symcon-Stil würde rund
  * 1.800 Zeilen umformatieren, diese Auswahl rund 250 — davon der größte Teil einmalig
@@ -32,7 +36,9 @@ return (new PhpCsFixer\Config())
     ->setRules([
         'align_multiline_comment'          => ['comment_type' => 'all_multiline'],
         'array_indentation'                => true,
+        'array_syntax'                     => ['syntax' => 'short'],
         'blank_line_after_opening_tag'     => true,
+        'constant_case'                    => ['case' => 'lower'],
         'line_ending'                      => true,
         'no_blank_lines_after_class_opening' => true,
         'no_extra_blank_lines'             => true,

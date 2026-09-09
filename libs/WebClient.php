@@ -5,17 +5,17 @@ class WebClient
     private $ch;
     private $cookie = '';
 
-    public function Navigate($url, $post = array())
+    public function Navigate($url, $post = [])
     {
         curl_setopt($this->ch, CURLOPT_URL, $url);
         curl_setopt($this->ch, CURLOPT_COOKIE, $this->cookie);
         if (!empty($post)) {
-            curl_setopt($this->ch, CURLOPT_POST, TRUE);
+            curl_setopt($this->ch, CURLOPT_POST, true);
             curl_setopt($this->ch, CURLOPT_POSTFIELDS, $post);
         }
         $response = $this->exec();
         if ($response['Code'] !== 200) {
-            return FALSE;
+            return false;
         }
         //echo curl_getinfo($this->ch, CURLINFO_HEADER_OUT);
         return $response['Html'];
@@ -35,19 +35,19 @@ class WebClient
     {
         $this->ch = curl_init();
         curl_setopt($this->ch, CURLOPT_USERAGENT, 'Mozilla/6.0 (Windows NT 6.2; WOW64; rv:16.0.1) Gecko/20121011 Firefox/16.0.1');
-        curl_setopt($this->ch, CURLOPT_FOLLOWLOCATION, TRUE);
+        curl_setopt($this->ch, CURLOPT_FOLLOWLOCATION, true);
         curl_setopt($this->ch, CURLOPT_MAXREDIRS, 5);
-        curl_setopt($this->ch, CURLINFO_HEADER_OUT, TRUE);
-        curl_setopt($this->ch, CURLOPT_HEADER, TRUE);
-        curl_setopt($this->ch, CURLOPT_AUTOREFERER, TRUE);
-        curl_setopt($this->ch, CURLOPT_RETURNTRANSFER, TRUE);
+        curl_setopt($this->ch, CURLINFO_HEADER_OUT, true);
+        curl_setopt($this->ch, CURLOPT_HEADER, true);
+        curl_setopt($this->ch, CURLOPT_AUTOREFERER, true);
+        curl_setopt($this->ch, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($this->ch, CURLOPT_CONNECTTIMEOUT, 20);
         curl_setopt($this->ch, CURLOPT_TIMEOUT, 30); //timeout in seconds
     }
 
     private function exec(): array
     {
-        $headers = array();
+        $headers = [];
         $html = '';
         $separator = "\r\n\r\n";
 
@@ -79,7 +79,7 @@ class WebClient
             $this->cookie = $headers['Set-Cookie'];
         }
 
-        return array('Code' => $httpcode, 'Headers' => $headers, 'Html' => $html);
+        return ['Code' => $httpcode, 'Headers' => $headers, 'Html' => $html];
     }
 
     private function close(): void
