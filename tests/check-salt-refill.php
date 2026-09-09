@@ -24,7 +24,7 @@ require_once __DIR__ . '/harness.php';
 function schalte(JuControlHarness $m, string $ident, mixed $wert, string $titel): void
 {
     echo "\n$titel\n";
-    $m->logs      = [];
+    $m->logsZuruecksetzen();
     $m->kommandos = [];
     try {
         $m->RequestAction($ident, $wert);

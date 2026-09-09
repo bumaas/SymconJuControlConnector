@@ -42,8 +42,13 @@ final class JuControlHarness extends JuControlDevice
     public array $kommandos = [];
     /** @var list<array{0: string, 1: mixed}> jedes SetValue */
     public array $writes = [];
-    /** @var list<array{0: int, 1: string}> jedes LogMessage als [Stufe, Text] */
-    public array $logs = [];
+    /**
+     * LogMessage zeichnet seit symcon/SymconStubs#74 (bf2950f) der Stub selbst auf
+     * (IPS\LogServer, je Instanz-ID). Der Harness merkt sich nur, ab welchem Eintrag
+     * ein Testabschnitt beginnt — so bleibt das Protokoll je Instanz abgrenzbar, ohne
+     * den globalen LogServer zurückzusetzen.
+     */
+    private int $logOffset = 0;
     /** @var list<int> jedes SetStatus (auch die aus Create/ApplyChanges) */
     public array $status = [];
     /** @var array<string, int> letztes SetTimerInterval je Timer */
@@ -130,9 +135,16 @@ final class JuControlHarness extends JuControlDevice
         parent::SetTimerInterval($Ident, $Milliseconds, $start);
     }
 
-    protected function LogMessage($Message, $Type): void
+    /** Startpunkt für das Protokoll des nächsten Testabschnitts setzen. */
+    public function logsZuruecksetzen(): void
     {
-        $this->logs[] = [$Type, $Message]; // im Stub ein leerer Rumpf
+        $this->logOffset = count(IPS\LogServer::getLogMessages((string)$this->InstanceID));
+    }
+
+    /** @return list<array{Message: string, Type: int}> Einträge seit dem letzten Zurücksetzen */
+    public function logsSeitMarke(): array
+    {
+        return array_values(array_slice(IPS\LogServer::getLogMessages((string)$this->InstanceID), $this->logOffset));
     }
 
     /** Systemprofile, die der Stub nicht mitbringt (sein ProfileManager startet leer) */
@@ -175,7 +187,10 @@ function pruefe(bool $ok, string $text): void
 
 function logsMitStufe(JuControlHarness $m, int $stufe): array
 {
-    return array_values(array_map(static fn($l) => $l[1], array_filter($m->logs, static fn($l) => $l[0] === $stufe)));
+    return array_values(array_map(
+        static fn(array $l): string => $l['Message'],
+        array_filter($m->logsSeitMarke(), static fn(array $l): bool => $l['Type'] === $stufe)
+    ));
 }
 
 function pruefeProtokoll(JuControlHarness $m, int $warnungen, int $hinweise): void

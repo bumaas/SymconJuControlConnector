@@ -78,7 +78,7 @@ function alleFelderLeer(array $deviceData): array
 function lauf(JuControlHarness $m, array $device, string $titel): void
 {
     echo "\n$titel\n";
-    $m->logs   = [];
+    $m->logsZuruecksetzen();
     $m->writes = [];
     try {
         $m->refresh($device);
@@ -187,7 +187,7 @@ pruefeProtokoll($m, 0, 0);
 
 /* I. Urlaubsmodus schalten, während das Attribut keinen Block 792 hat */
 echo "\nI. RequestAction Urlaubsmodus ohne Block 792 im Attribut\n";
-$m->logs   = [];
+$m->logsZuruecksetzen();
 $m->writes = [];
 try {
     $m->RequestAction('wsHolidayMode', 1);
@@ -249,7 +249,7 @@ pruefeProtokoll($rd, 1, 0);
 
 /* O. RefreshData() mit vollständigem Datensatz danach: Erfolg, Erholung protokolliert */
 echo "\nO. RefreshData() mit vollständigem Datensatz\n";
-$rd->logs         = [];
+$rd->logsZuruecksetzen();
 $rd->cloudAntwort = cloudAntwort(geraet($fixture));
 try {
     $ergebnis = $rd->RefreshData();
