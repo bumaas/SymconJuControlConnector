@@ -13,7 +13,7 @@ Ursprünglich von tlowcode, seit 2024 hier weitergepflegt.
 - `libs/WebClient.php` — die **einzige** Netzschicht, curl mit `CURLOPT_HEADER`
   (Fremdcode von wolbolar, deshalb im Stil abweichend)
 - `libs/DebugHelper.php` — Debug-Ausgaben
-- `tests/` — vier Prüfskripte plus der Kernel-Stub als Submodul (siehe unten)
+- `tests/` — fünf Prüfskripte, `harness.php` plus der Kernel-Stub als Submodul (siehe unten)
 - `library.json` — Version, Build, Datum (Konvention siehe globale `CLAUDE.md`)
 
 Die Modulklasse erbt **`IPSModule`**, nicht `IPSModuleStrict` — anders als die neueren
@@ -30,22 +30,17 @@ C:/php/php tests/check-webclient-response.php      # Zerlegen der HTTP-Antwort (
 C:/php/php tests/check_locale.php                  # Übersetzungs-Vollständigkeit
 ```
 
-Style (Punkt 7 der Referenz-Checkliste): eigenes schlankes Regelwerk `.php-cs-fixer.php`,
-**nicht** das volle StylePHP von Symcon. Prüfen mit
+Style (Punkt 7 der Referenz-Checkliste): gemeinsames Regelwerk im Submodul `.style`
+(`bumaas/SymconStylePHP`), **nicht** das volle StylePHP von Symcon. Prüfen wie in der CI:
 
 ```bash
-php php-cs-fixer.phar fix --dry-run --diff --allow-risky=yes
+php php-cs-fixer-v3.phar fix --config=.style/.php-cs-fixer.php --dry-run --diff --using-cache=no --allow-risky=yes
 ```
 
 Die CI (`.github/workflows/check.yml`, PHP 8.4) fährt genau diese Schritte plus `php -l`
-und JSON-Validität. **Vor dem Commit lokal dasselbe laufen lassen** — das eingebettete PHP
-von Symcon ist nicht das CLI-PHP, `php -l` findet nur Syntaxfehler.
+und JSON-Validität. **Vor dem Commit lokal dasselbe laufen lassen.**
 
-Bibliothek auf der Produktivanlage ohne Kernel-Neustart einlesen:
-
-```bash
-C:/php/php C:/Users/Burkhard/.claude/tools/symcon_rpc.php MC_ReloadModule 51062 '"SymconJuControlConnector"'
-```
+Neu einlesen: `MC_ReloadModule` mit Ordnername `SymconJuControlConnector` (Details global).
 
 ## Die Cloud-Anbindung
 
@@ -85,19 +80,8 @@ leeren Blöcken — solche Läufe überspringt das Modul (build 12).
 
 ## Tests auf dem offiziellen Kernel-Stub
 
-`tests/stubs` ist ein Submodul auf `symcon/SymconStubs`, **auf einen festen Commit gepinnt**
-(Stand `bf2950f`); nie `submodule update --remote`. Einmalig `git submodule update --init`.
-
-`tests/harness.php` hängt `JuControlDevice` an den Stub, macht die privaten Methoden
-aufrufbar und ersetzt jeden Netzzugriff (`SendCommand`, `sendDeviceCommand`). Der Stub ist
-strenger als eine Attrappe: `RegisterVariable*` verlangt existierende Profile mit passendem
-Typ, `SetValue` castet nicht, `ReadAttribute*` wirft bei unregistriertem Attribut. **Befunde
-des Stubs sind Modulfehler und werden im Modul behoben, nicht im Test kaschiert** — so kam
-der fehlende `JCD.Hours`-Profileintrag ans Licht (build 14).
-
-Seit `symcon/SymconStubs#74` zeichnet der Stub `LogMessage` selbst auf
-(`IPS\LogServer::getLogMessages()`); der Harness merkt sich nur einen Offset je
-Testabschnitt, weil `reset()` global wirkt.
+`tests/stubs` = `symcon/SymconStubs`, gepinnt auf `bf2950f` (einmalig `git submodule update --init`);
+`tests/harness.php` ersetzt den Netzzugriff (`SendCommand`, `sendDeviceCommand`). Muster und Regeln: globale Checkliste Punkt 9.
 
 ## Stolpersteine, die schon Zeit gekostet haben
 
@@ -115,8 +99,6 @@ Testabschnitt, weil `reset()` global wirkt.
 - **`RegisterVariables()` vergibt Positionen über `++$position`.** Ein doppelter
   Registrierungsblock verbrennt still eine Nummer und verschiebt alle folgenden Variablen
   (build 27). `tests/check-variable-registration.php` fängt das ab.
-- **Kein Style-Workflow ohne `--dry-run`.** Der frühere `stylechecker.yml` korrigierte nur
-  im Runner und meldete jahrelang grün, ohne je zu prüfen (build 25).
 
 ## Geräteabdeckung
 
