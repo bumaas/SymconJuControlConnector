@@ -50,3 +50,6 @@ jobs:
 
       - name: Variablen-Registrierung
         run: php tests/check-variable-registration.php
+
+      - name: Modultests
+        run: for t in tests/check-*.php; do echo "== $t"; php "$t" || exit 1; done

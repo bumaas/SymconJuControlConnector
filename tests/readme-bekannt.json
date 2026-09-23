@@ -1,0 +1,11 @@
+{
+    "hinweis": "Doku-Lücken bei Einführung von tests/check-readme.php. Nur streichen, nie ergänzen - neue Felder und Funktionen gehören in die Doku.",
+    "offen": [
+        "feld:JuControlDevice:Password",
+        "feld:JuControlDevice:RefreshRate",
+        "feld:JuControlDevice:SerialNumber",
+        "feld:JuControlDevice:Username",
+        "funktion:JCD_SendCommand",
+        "funktion:JCD_Wakeup"
+    ]
+}
