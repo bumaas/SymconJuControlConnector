@@ -22,6 +22,7 @@ jobs:
           php -l tests/check-incomplete-devicedata.php
           php -l tests/check-salt-refill.php
           php -l tests/check-webclient-response.php
+          php -l tests/check-request-failures.php
           php -l libs/WebClient.php
           php -l tests/check_locale.php
           php -l tests/check-variable-registration.php

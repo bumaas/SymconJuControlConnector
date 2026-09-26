@@ -117,6 +117,9 @@ Beispiel:
 V1.4
 - Salzvorrat setzbar (nach dem Nachfüllen den neuen Bestand eintragen)
 - Gerätekommandos tragen die Gerätekennung der Instanz (i-soft K SAFE+ sendet 0x67 statt 0x33)
+- Einzelne Aussetzer der JUDO-Cloud erscheinen nicht mehr als Fehler im Meldungsprotokoll. Erst nach
+  drei fehlgeschlagenen Abrufen in Folge kommt eine Warnung mit der Ursache (HTTP-Code bzw.
+  Verbindungsfehler), bei Erholung ein Hinweis. Das Zugriffstoken steht nicht mehr im Protokoll.
 
 20.01.2023
 V1.3

@@ -6,6 +6,7 @@ class WebClient
 {
     private $ch;
     private $cookie = '';
+    private string $lastError = '';
 
     public function Navigate($url, $post = [])
     {
@@ -17,10 +18,33 @@ class WebClient
         }
         $response = $this->exec();
         if ($response['Code'] !== 200) {
+            $this->lastError = self::describeError($response['Code'], $response['Errno'], $response['Error']);
             return false;
         }
+        $this->lastError = '';
         //echo curl_getinfo($this->ch, CURLINFO_HEADER_OUT);
         return $response['Html'];
+    }
+
+    /** Ursache des letzten fehlgeschlagenen Navigate(), leer nach Erfolg */
+    public function getLastError(): string
+    {
+        return $this->lastError;
+    }
+
+    /**
+     * Beschreibt einen Fehlschlag für Log und Debug: "HTTP 503", "curl error 28: Connection
+     * timed out after 2006 milliseconds" oder "no response". Leer, wenn nichts schiefging.
+     */
+    public static function describeError(int $httpCode, int $curlErrno, string $curlError): string
+    {
+        if ($curlErrno !== 0) {
+            return sprintf('curl error %d: %s', $curlErrno, $curlError);
+        }
+        if ($httpCode === 200) {
+            return '';
+        }
+        return $httpCode === 0 ? 'no response' : 'HTTP ' . $httpCode;
     }
 
     public function __construct()
@@ -93,7 +117,13 @@ class WebClient
             $this->cookie = $headers['Set-Cookie'];
         }
 
-        return ['Code' => $httpcode, 'Headers' => $headers, 'Html' => $html];
+        return [
+            'Code'    => $httpcode,
+            'Headers' => $headers,
+            'Html'    => $html,
+            'Errno'   => curl_errno($this->ch),
+            'Error'   => curl_error($this->ch)
+        ];
     }
 
     private function close(): void

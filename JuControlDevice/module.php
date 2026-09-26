@@ -27,6 +27,11 @@ class JuControlDevice extends IPSModule
     private const ATTR_DEVICEDATA       = 'DeviceData';
     private const ATTR_INCOMPLETE_SINCE = 'IncompleteDataSince'; // Beginn einer Störung der Cloud-Daten, leer = keine
     private const ATTR_DEVICE_DT        = 'DeviceDt'; // Gerätekennung laut Cloud-Datensatz (0x33/0x67), maßgeblich für Gerätekommandos
+    private const ATTR_REQUEST_FAILURES = 'RequestFailures'; // Fehlschläge von SendCommand() in Folge
+    private const ATTR_REQUEST_FAILED_SINCE = 'RequestFailedSince'; // Beginn der Fehlerserie, leer = keine
+
+    /** Ab so vielen Fehlschlägen in Folge gilt die Cloud als gestört (Warnung statt nur Debug) */
+    private const REQUEST_FAILURES_WARN = 3;
 
     //variable idents
     private const VAR_IDENT_DEVICESTATE                 = 'deviceState';
@@ -106,6 +111,8 @@ class JuControlDevice extends IPSModule
         $this->RegisterAttributeString(self::ATTR_DEVICEDATA, '');
         $this->RegisterAttributeString(self::ATTR_INCOMPLETE_SINCE, '');
         $this->RegisterAttributeString(self::ATTR_DEVICE_DT, '');
+        $this->RegisterAttributeInteger(self::ATTR_REQUEST_FAILURES, 0);
+        $this->RegisterAttributeString(self::ATTR_REQUEST_FAILED_SINCE, '');
 
         //timer
         $this->RegisterTimer('RefreshTimer', 0, 'JCD_RefreshData(' . $this->InstanceID . ');');
@@ -733,7 +740,7 @@ class JuControlDevice extends IPSModule
                 $deviceCommandUrl .= '&parameter=' . $parameter;
             }
 
-            $this->SendDebug(__FUNCTION__, 'Requesting API URL ' . $deviceCommandUrl, 0);
+            $this->SendDebug(__FUNCTION__, 'Requesting API URL ' . self::maskToken($deviceCommandUrl), 0);
             $response = $this->sendDeviceCommand($deviceCommandUrl);
 
             $this->SendDebug(__FUNCTION__, 'Received response from API: ' . $response, 0);
@@ -758,9 +765,20 @@ class JuControlDevice extends IPSModule
         return $wc->Navigate($url);
     }
 
-    public function SendCommand(string $url, array $data)
+    /**
+     * Netz-Naht von SendCommand() (Tests überschreiben sie).
+     *
+     * @return array{response: string|false, error: string} error beschreibt einen Fehlschlag (HTTP-Code bzw. curl-Fehler)
+     */
+    protected function httpGet(string $url): array
     {
-        $wc = new WebClient();
+        $wc       = new WebClient();
+        $response = $wc->Navigate($url);
+        return ['response' => $response, 'error' => $wc->getLastError()];
+    }
+
+    public function SendCommand(string $url, array $data): string|false
+    {
         if (!isset($data['token'])) {
             if ($url === self::SERVER_KNM) {
                 $data['token'] = $this->ReadAttributeString(self::ATTR_TOKEN_KNM);
@@ -778,19 +796,57 @@ class JuControlDevice extends IPSModule
         }
 
         $deviceDataUrl    = $url . '/?' . http_build_query($data);
-        $deviceDataUrlLog = $url . '/?' . http_build_query($dataLog);
+        $deviceDataUrlLog = str_replace('%2A', '*', self::maskToken($url . '/?' . http_build_query($dataLog)));
         $this->SendDebug(sprintf('%s: %s', __FUNCTION__, $data['command']), 'url: ' . $deviceDataUrlLog, 0);
 
-        $response = $wc->Navigate($deviceDataUrl);
+        ['response' => $response, 'error' => $error] = $this->httpGet($deviceDataUrl);
 
         if ($response === false) {
-            $this->SendDebug(__FUNCTION__, 'ERROR url: ' . $deviceDataUrlLog, 0);
-            $this->LogMessage('Error during request to JuControl API: ' . $deviceDataUrlLog, KL_ERROR);
+            $this->SendDebug(__FUNCTION__, sprintf('ERROR (%s) url: %s', $error, $deviceDataUrlLog), 0);
+            $this->trackRequestFailure($error, $deviceDataUrlLog);
             return false;
         }
+        $this->trackRequestSuccess();
         $this->SendDebug(sprintf('%s: %s', __FUNCTION__, $data['command']), 'response: ' . $response, 0);
 
         return $response;
+    }
+
+    /** Das Token gehört weder ins Protokoll noch ins Debug (Anwender posten beides im Forum). */
+    private static function maskToken(string $url): string
+    {
+        return preg_replace('/([?&]token=)[^&]*/', '$1***', $url);
+    }
+
+    /**
+     * Ein einzelner Aussetzer der Cloud ist normal (26.09.2026: 2 von rund 860 Abrufen) und
+     * steht nur im Debug. Erst der REQUEST_FAILURES_WARN-te Fehlschlag in Folge wird einmal als
+     * Warnung protokolliert, die Erholung danach einmal als Hinweis (trackRequestSuccess).
+     */
+    private function trackRequestFailure(string $error, string $urlLog): void
+    {
+        $failures = $this->ReadAttributeInteger(self::ATTR_REQUEST_FAILURES) + 1;
+        $this->WriteAttributeInteger(self::ATTR_REQUEST_FAILURES, $failures);
+        if ($failures === 1) {
+            $this->WriteAttributeString(self::ATTR_REQUEST_FAILED_SINCE, (string)time());
+        }
+        if ($failures === self::REQUEST_FAILURES_WARN) {
+            $this->LogMessage(sprintf('JUDO cloud not reachable: %d requests failed in a row, last: %s (%s)', $failures, $error, $urlLog), KL_WARNING);
+        }
+    }
+
+    private function trackRequestSuccess(): void
+    {
+        $failures = $this->ReadAttributeInteger(self::ATTR_REQUEST_FAILURES);
+        if ($failures === 0) {
+            return;
+        }
+        if ($failures >= self::REQUEST_FAILURES_WARN) {
+            $since = (int)$this->ReadAttributeString(self::ATTR_REQUEST_FAILED_SINCE);
+            $this->LogMessage(sprintf('JUDO cloud reachable again after %d failed requests (%d minutes)', $failures, intdiv(time() - $since, 60)), KL_NOTIFY);
+        }
+        $this->WriteAttributeInteger(self::ATTR_REQUEST_FAILURES, 0);
+        $this->WriteAttributeString(self::ATTR_REQUEST_FAILED_SINCE, '');
     }
 
     private function dezimal2x8bitTo16bitDez(int $dez0, int $dez1): int
@@ -1397,20 +1453,7 @@ class JuControlDevice extends IPSModule
                 $this->WriteAttributeString(self::ATTR_TOKEN_JUDO, $jsonMyJudoCom->token);
             }
 
-            $this->SendDebug(
-                __FUNCTION__,
-                sprintf(
-                    'Login successful%s',
-                    ($deviceType === self::DT_I_SOFT_PLUS) ? sprintf(
-                        ', Token %s: %s, Token %s: %s',
-                        self::SERVER_KNM,
-                        $jsonMyJudoEU->token,
-                        self::SERVER_JUDO,
-                        $jsonMyJudoCom->token
-                    ) : sprintf(', Token %s: %s', self::SERVER_KNM, $jsonMyJudoEU->token)
-                ),
-                0
-            );
+            $this->SendDebug(__FUNCTION__, 'Login successful', 0);
 
             $this->SetStatus(IS_ACTIVE);
             $refreshRate = $this->ReadPropertyInteger('RefreshRate');

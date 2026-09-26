@@ -13,7 +13,7 @@ Ursprünglich von tlowcode, seit 2024 hier weitergepflegt.
 - `libs/WebClient.php` — die **einzige** Netzschicht, curl mit `CURLOPT_HEADER`
   (Fremdcode von wolbolar, deshalb im Stil abweichend)
 - `libs/DebugHelper.php` — Debug-Ausgaben
-- `tests/` — fünf Prüfskripte, `harness.php` plus der Kernel-Stub als Submodul (siehe unten)
+- `tests/` — sieben Prüfskripte, `harness.php` plus der Kernel-Stub als Submodul (siehe unten)
 - `library.json` — Version, Build, Datum (Konvention siehe globale `CLAUDE.md`)
 
 Die Modulklasse erbt **`IPSModule`**, nicht `IPSModuleStrict` — anders als die neueren
@@ -27,6 +27,7 @@ C:/php/php tests/check-incomplete-devicedata.php   # unvollständige Cloud-Daten
 C:/php/php tests/check-salt-refill.php             # Salzvorrat und Gerätekennung (56)
 C:/php/php tests/check-variable-registration.php   # Positionen der Statusvariablen (4)
 C:/php/php tests/check-webclient-response.php      # Zerlegen der HTTP-Antwort (11)
+C:/php/php tests/check-request-failures.php        # Fehlschläge, Ursache, Token-Maskierung (33)
 C:/php/php tests/check_locale.php                  # Übersetzungs-Vollständigkeit
 ```
 
@@ -51,7 +52,17 @@ Zwei Endpunkte, beide über `SendCommand($url, $data)`:
 
 Der Token kommt aus dem jeweiligen Attribut (`AccessTokenMyJudoEU` bzw.
 `AccessTokenMyJudoCom`) und wird angehängt, wenn er nicht schon im Datensatz steht.
-Passwort und `nohash` sind im Debug-Log maskiert.
+Passwort, `nohash` und Token sind in Protokoll und Debug maskiert (`maskToken()`, auch bei
+den Gerätekommandos).
+
+**Fehlschläge der Cloud werden gezählt, nicht einzeln gemeldet** (build 32). Die Netz-Naht
+ist `httpGet()`, die Ursache liefert `WebClient::getLastError()` („HTTP 503", „curl error
+28: …"). Ein einzelner Aussetzer steht nur im Debug — am 26.09.2026 waren es 2 von rund 860
+Abrufen, früher jeweils ein `ERROR`. Erst der dritte Fehlschlag in Folge
+(`REQUEST_FAILURES_WARN`, Attribute `RequestFailures`/`RequestFailedSince`) gibt einmal eine
+Warnung, der nächste Erfolg danach einmal einen Hinweis — dasselbe Muster wie bei den
+unvollständigen Daten. Gerätekommandos aus `RequestAction` melden einen Fehlschlag weiterhin
+sofort als `ERROR`, weil dort eine Anwenderaktion verloren geht.
 
 **Gerätekommandos** haben die Form
 `write%20data&dt=<Kennung>&index=<Register>&data=<Wert>&da=0x1`. Zwei Fallstricke:

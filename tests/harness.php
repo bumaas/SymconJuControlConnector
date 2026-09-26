@@ -97,9 +97,31 @@ final class JuControlHarness extends JuControlDevice
         return $werte;
     }
 
-    public function SendCommand(string $url, array $data): string
+    /**
+     * Netzantworten für die echte SendCommand() (check-request-failures.php), je Anfrage eine:
+     * [Rumpf|false, HTTP-Code, curl-Fehlernummer, curl-Fehlertext]. null = SendCommand() liefert
+     * pauschal $cloudAntwort, wie es die übrigen Tests brauchen.
+     *
+     * @var list<array{0: string|false, 1: int, 2: int, 3: string}>|null
+     */
+    public ?array $netz = null;
+    /** @var list<string> an httpGet() übergebene URLs */
+    public array $netzUrls = [];
+
+    public function SendCommand(string $url, array $data): string|false
     {
-        return $this->cloudAntwort;
+        if ($this->netz === null) {
+            return $this->cloudAntwort;
+        }
+        return parent::SendCommand($url, $data);
+    }
+
+    /** Netz-Naht von SendCommand(): liefert die nächste Antwort aus $netz */
+    protected function httpGet(string $url): array
+    {
+        $this->netzUrls[] = $url;
+        [$rumpf, $code, $errno, $fehler] = array_shift($this->netz) ?? throw new LogicException('keine Netzantwort vorbereitet: ' . $url);
+        return ['response' => $rumpf, 'error' => $rumpf === false ? WebClient::describeError($code, $errno, $fehler) : ''];
     }
 
     /** Netz-Naht der Gerätekommandos (RequestAction) */
