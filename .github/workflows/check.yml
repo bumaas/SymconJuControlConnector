@@ -52,5 +52,9 @@ jobs:
       - name: Variablen-Registrierung
         run: php tests/check-variable-registration.php
 
+      - name: MCP-Tauglichkeit (statische Regeln, bumaas/symcon-mcp-check)
+        uses: bumaas/symcon-mcp-check@v1
+        with:
+          language: de
       - name: Modultests
         run: for t in tests/check-*.php; do echo "== $t"; php "$t" || exit 1; done
